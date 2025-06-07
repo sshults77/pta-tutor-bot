@@ -12,13 +12,16 @@ st.write(
 # Use OpenAI key from Streamlit secrets
 import openai
 import streamlit as st
+import openai
+from openai import OpenAI
 
-# Pull the API key from the .streamlit/secrets.toml file
+# Use API key from Streamlit secrets
 openai_api_key = st.secrets["openai"]["api_key"]
 openai.api_key = openai_api_key
 
-    # Create an OpenAI client.
-    client = OpenAI(api_key=openai_api_key)
+# Create an OpenAI client if needed
+client = OpenAI(api_key=openai_api_key)
+
 
     # Create a session state variable to store the chat messages. This ensures that the
     # messages persist across reruns.
