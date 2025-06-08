@@ -113,4 +113,3 @@ if st.button("Generate Quiz"):
 
         except Exception as e:
             st.error(f"❌ Failed to generate quiz: {str(e)}")
-
