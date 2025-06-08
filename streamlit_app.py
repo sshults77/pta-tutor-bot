@@ -34,16 +34,17 @@ openai_api_key = st.secrets["openai"]["api_key"]
 openai.api_key = openai_api_key
 client = OpenAI(api_key=openai_api_key)
 
-# Session state
+# --- Chat Section ---
+st.markdown("## 💬 Tutor Chat")
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Show prior chat
+# Show chat history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Chat input
+# Input field for chat
 if prompt := st.chat_input("Ask a question about your course..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
@@ -85,30 +86,31 @@ if prompt := st.chat_input("Ask a question about your course..."):
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
 
-# --- QUIZ GENERATOR FEATURE ---
+# --- QUIZ GENERATOR SECTION ---
 st.markdown("---")
-st.subheader("📘 Quiz Me on This Course")
+st.markdown("## 📝 Quiz Generator")
 
 if st.button("Generate Quiz"):
-    try:
-        quiz_prompt = (
-            "You are a PTA tutor. Based on the following material, generate 3 multiple-choice questions. "
-            "Each should have 4 options (A-D) and indicate the correct answer after each question. "
-            "Use clear, concise clinical language appropriate for PTA students:\n\n"
-            + pdf_text
-        )
+    if not pdf_text:
+        st.warning("No PDF content found for this course.")
+    else:
+        try:
+            quiz_prompt = (
+                "You are a PTA tutor. Based on the following material, generate 3 multiple-choice questions. "
+                "Each should have 4 options (A-D) and indicate the correct answer after each question. "
+                "Use clear, concise clinical language appropriate for PTA students:\n\n"
+                + pdf_text
+            )
 
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": quiz_prompt}]
-        )
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": quiz_prompt}]
+            )
 
-        quiz_output = response.choices[0].message.content
-        st.markdown("### 📝 Your Quiz")
-        st.markdown(quiz_output)
+            quiz_output = response.choices[0].message.content
+            st.markdown("### ✅ Quiz Output")
+            st.markdown(quiz_output)
 
-    except Exception as e:
-        st.error(f"❌ Failed to generate quiz: {str(e)}")
-
-
+        except Exception as e:
+            st.error(f"❌ Failed to generate quiz: {str(e)}")
 
