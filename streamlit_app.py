@@ -30,13 +30,28 @@ if prompt := st.chat_input("Ask me anything about PTA..."):
     with st.chat_message("user"):
         st.markdown(prompt)
 
+    # Define the system prompt
+    system_prompt = {
+        "role": "system",
+        "content": (
+            "You are a friendly, accurate, and supportive chatbot tutor for students "
+            "in a Physical Therapist Assistant (PTA) program. Use the uploaded course materials "
+            "when possible. Focus on helping students prepare for their coursework and licensing exam. "
+            "Provide examples, quizzes, and explanations appropriate for PTA students. "
+            "Do not give unrelated advice or answer outside of the PTA curriculum."
+        )
+    }
+
     # Get response from OpenAI
     try:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": m["role"], "content": m["content"]}
-                for m in st.session_state.messages
+                system_prompt,
+                *[
+                    {"role": m["role"], "content": m["content"]}
+                    for m in st.session_state.messages
+                ]
             ]
         )
 
