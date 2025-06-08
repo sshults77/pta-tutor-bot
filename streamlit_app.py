@@ -7,7 +7,7 @@ import PyPDF2
 # Title and course selector
 st.title("💬 PTA Tutor Chatbot")
 
-# Course selector
+# Course selector dropdown
 course = st.selectbox("Select your course:", ["PTA_1010"])
 
 # Load PDF content
@@ -21,39 +21,42 @@ def load_pdf_text(course_folder):
                 with open(pdf_path, "rb") as f:
                     reader = PyPDF2.PdfReader(f)
                     for page in reader.pages:
-                        full_text += page.extract_text() or ""
+                        page_text = page.extract_text()
+                        if page_text:
+                            full_text += page_text
     return full_text
 
-pdf_text = load_pdf_text(course)
+# Truncate to prevent token overload
+pdf_text = load_pdf_text(course)[:3000]  # Limit to ~3,000 characters
 
-# Load API key from secrets
+# Load API key
 openai_api_key = st.secrets["openai"]["api_key"]
 openai.api_key = openai_api_key
 client = OpenAI(api_key=openai_api_key)
 
-# Set up session history
+# Session state for chat memory
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display chat history
+# Show previous chat messages
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# User input
+# Chat input
 if prompt := st.chat_input("Ask a question about your course..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Define system prompt using the PDF content
+    # System prompt using PDF content
     system_prompt = {
         "role": "system",
         "content": (
-            "You are a supportive tutor helping PTA students prepare for coursework and licensure. "
-            "Use only the following course materials to answer questions:\n\n"
+            "You are a helpful and focused tutor supporting students in a Physical Therapist Assistant (PTA) program. "
+            "You should only answer using the following course material:\n\n"
             + pdf_text +
-            "\n\nDo not answer outside of this content."
+            "\n\nIf the question is outside this material, politely say you cannot answer."
         )
     }
 
@@ -79,9 +82,9 @@ if prompt := st.chat_input("Ask a question about your course..."):
         })
 
     except openai.RateLimitError:
-        st.error("⚠️ OpenAI rate limit reached. Try again in a few minutes.")
+        st.error("⚠️ Rate limit reached. Wait a few minutes or check usage.")
     except Exception as e:
-        st.error(f"❌ An unexpected error occurred: {str(e)}")
+        st.error(f"❌ An error occurred: {str(e)}")
 
 
 
