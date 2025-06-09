@@ -2,46 +2,70 @@ import streamlit as st
 import openai
 from openai import OpenAI
 import os
+import pdfplumber
 import json
-import PyPDF2
 from datetime import datetime
 
-# --- Setup ---
-st.title("💬 PTA Tutor Chatbot & Quiz Logger")
+# Page title
+st.title("💬 PTA Tutor Chatbot & Quiz Tracker")
+
+# Course selector
 course = st.selectbox("Select your course:", ["PTA_1010"])
 
-# --- Load PDF content ---
+# --- Load PDF content using pdfplumber ---
 def load_pdf_text(course_folder):
     folder_path = f"course_materials/{course_folder}"
     full_text = ""
     if os.path.exists(folder_path):
+        st.markdown("### 📄 Loaded PDF Files")
         for filename in os.listdir(folder_path):
             if filename.endswith(".pdf"):
                 pdf_path = os.path.join(folder_path, filename)
-                with open(pdf_path, "rb") as f:
-                    reader = PyPDF2.PdfReader(f)
-                    for page in reader.pages:
-                        text = page.extract_text()
-                        if text:
-                            full_text += text
+                try:
+                    with pdfplumber.open(pdf_path) as pdf:
+                        text = ""
+                        for page in pdf.pages:
+                            page_text = page.extract_text()
+                            if page_text:
+                                text += page_text
+                    char_count = len(text)
+                    st.markdown(f"- ✅ **{filename}** ({char_count} characters extracted)")
+                    full_text += text
+                except Exception as e:
+                    st.markdown(f"- ❌ **{filename}** could not be read: {e}")
+    else:
+        st.warning("No PDF folder found for this course.")
     return full_text
 
-pdf_text = load_pdf_text(course)[:3000]
+pdf_text = load_pdf_text(course)[:3000]  # Truncate to stay under token limits
 
-# --- OpenAI setup ---
+# OpenAI setup
 openai_api_key = st.secrets["openai"]["api_key"]
 openai.api_key = openai_api_key
 client = OpenAI(api_key=openai_api_key)
+
+# Default user (until login system)
+user_id = "default_user"
+log_file = f"student_logs/{user_id}.json"
+
+# Ensure log file exists
+if not os.path.exists("student_logs"):
+    os.makedirs("student_logs")
+if not os.path.exists(log_file):
+    with open(log_file, "w") as f:
+        json.dump([], f)
 
 # --- Chat Section ---
 st.markdown("## 💬 Tutor Chat")
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# Show chat history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+# Chat input
 if prompt := st.chat_input("Ask a question about your course..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
@@ -60,85 +84,62 @@ if prompt := st.chat_input("Ask a question about your course..."):
     try:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[system_prompt] + st.session_state.messages
+            messages=[
+                system_prompt,
+                *[{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
+            ]
         )
+
         reply = response.choices[0].message.content
         with st.chat_message("assistant"):
             st.markdown(reply)
-        st.session_state.messages.append({"role": "assistant", "content": reply})
+
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": reply
+        })
 
     except openai.RateLimitError:
         st.error("⚠️ Rate limit reached. Try again later.")
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
 
-# --- Quiz Generator + Logger ---
+# --- Quiz Generator Section ---
 st.markdown("---")
-st.markdown("## 📝 Quiz Me on This Course")
+st.markdown("## 📝 Quiz Generator")
 
 if st.button("Generate Quiz"):
-    if not pdf_text:
-        st.warning("No PDF content found.")
-    else:
+    try:
         quiz_prompt = (
-            "Create 3 multiple-choice questions based on the following content. "
-            "Each should have 4 options (A-D), clearly marked, and the correct answer indicated after each question.\n\n"
+            "You are a PTA tutor. Based on the following material, generate 3 multiple-choice questions. "
+            "Each should have 4 options (A-D) and indicate the correct answer after each question. "
+            "Use clear, concise clinical language appropriate for PTA students:\n\n"
             + pdf_text
         )
-        try:
-            response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": quiz_prompt}]
-            )
-            quiz_output = response.choices[0].message.content
-            st.session_state.current_quiz = quiz_output
-        except Exception as e:
-            st.error(f"Quiz generation failed: {e}")
 
-# --- Show quiz and collect answers ---
-if "current_quiz" in st.session_state:
-    st.markdown("### Your Quiz")
-    st.markdown(st.session_state.current_quiz)
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": quiz_prompt}]
+        )
 
-    student_answers = st.text_area("Enter your answers (e.g., A, C, B):").strip().upper()
-    if st.button("Submit Answers"):
-        correct_count = 0
-        results = []
-        quiz_lines = st.session_state.current_quiz.split("\n")
-        answer_index = 0
-        for i, line in enumerate(quiz_lines):
-            if "Answer:" in line:
-                question_text = "\n".join(quiz_lines[i-5:i])
-                correct = line.split("Answer:")[-1].strip().upper()
-                student = student_answers.split(",")[answer_index].strip() if answer_index < len(student_answers.split(",")) else ""
-                is_correct = student == correct
-                results.append({
-                    "timestamp": datetime.now().isoformat(),
-                    "question": question_text,
-                    "student_answer": student,
-                    "correct_answer": correct,
-                    "result": "✅" if is_correct else "❌"
-                })
-                answer_index += 1
-                if is_correct:
-                    correct_count += 1
+        quiz_output = response.choices[0].message.content
+        st.markdown("### ✅ Quiz Output")
+        st.markdown(quiz_output)
 
-        st.markdown(f"### 📊 Score: {correct_count} / {len(results)}")
-        for r in results:
-            st.markdown(f"**Q:** {r['question']}\n- Your answer: {r['student_answer']} ({r['result']})\n- Correct: {r['correct_answer']}")
+        # Log quiz interaction
+        log_entry = {
+            "Date": str(datetime.now()),
+            "Course": course,
+            "Type": "quiz_generated",
+            "Content": quiz_output
+        }
+        with open(log_file, "r+") as f:
+            data = json.load(f)
+            data.append(log_entry)
+            f.seek(0)
+            json.dump(data, f, indent=2)
 
-        # --- Logging ---
-        os.makedirs("student_logs", exist_ok=True)
-        log_path = "student_logs/default_user.json"
-        try:
-            if os.path.exists(log_path):
-                with open(log_path, "r") as f:
-                    data = json.load(f)
-            else:
-                data = []
-            data.extend(results)
-            with open(log_path, "w") as f:
-                json.dump(data, f, indent=2)
-        except Exception as e:
-            st.error(f"Failed to save log: {e}")
+    except Exception as e:
+        st.error(f"❌ Failed to generate quiz: {str(e)}")
+
 
