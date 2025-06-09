@@ -2,47 +2,52 @@ import streamlit as st
 import openai
 from openai import OpenAI
 import os
-import PyPDF2
+import pdfplumber
 import pandas as pd
 import matplotlib.pyplot as plt
-import json
 from datetime import datetime
 
-# Page title
-st.title("💬 PTA Tutor Chatbot & Quiz Tracker")
+# Title
+st.title("📚 PTA Tutor Chatbot with Quiz & Performance Tracker")
 
-# Select course
+# Course selection
 course = st.selectbox("Select your course:", ["PTA_1010"])
+course_folder = f"course_materials/{course}"
 
-# Load PDFs
-def load_pdf_text(course_folder):
-    folder_path = f"course_materials/{course_folder}"
-    full_text = ""
-    if os.path.exists(folder_path):
-        for filename in os.listdir(folder_path):
+# Load PDF text
+def load_pdf_text(folder):
+    text = ""
+    if os.path.exists(folder):
+        for filename in os.listdir(folder):
             if filename.endswith(".pdf"):
-                pdf_path = os.path.join(folder_path, filename)
-                with open(pdf_path, "rb") as f:
-                    reader = PyPDF2.PdfReader(f)
-                    for page in reader.pages:
-                        page_text = page.extract_text()
-                        if page_text:
-                            full_text += page_text
-    return full_text
+                file_path = os.path.join(folder, filename)
+                with pdfplumber.open(file_path) as pdf:
+                    for page in pdf.pages:
+                        text += page.extract_text() or ""
+    return text
 
-pdf_text = load_pdf_text(course)[:3000]
+pdf_text = load_pdf_text(course_folder)[:3000]  # Token limit control
 
 # OpenAI setup
 openai_api_key = st.secrets["openai"]["api_key"]
 openai.api_key = openai_api_key
 client = OpenAI(api_key=openai_api_key)
 
-# Session state for messages
+# Load grading log
+log_path = "/mnt/data/grading_log.csv"
+if not os.path.exists(log_path):
+    pd.DataFrame(columns=[
+        "question_id", "question_text", "user_answer",
+        "correct_answer", "correct", "timestamp"
+    ]).to_csv(log_path, index=False)
+
+# --- Chat Section ---
+st.header("💬 Chat with the Tutor")
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display chat history
-st.markdown("## 💬 Chat")
+# Display prior chat
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
@@ -56,10 +61,8 @@ if prompt := st.chat_input("Ask a question about your course..."):
     system_prompt = {
         "role": "system",
         "content": (
-            "You are a helpful and focused tutor for Physical Therapist Assistant (PTA) students. "
-            "Use only this course content to answer questions:\n\n"
-            + pdf_text +
-            "\n\nIf the question is unrelated, say you can't answer it."
+            "You are a knowledgeable and focused PTA tutor. "
+            "Use ONLY this course content to answer questions:\n\n" + pdf_text
         )
     }
 
@@ -73,83 +76,70 @@ if prompt := st.chat_input("Ask a question about your course..."):
             st.markdown(reply)
         st.session_state.messages.append({"role": "assistant", "content": reply})
     except Exception as e:
-        st.error(f"❌ Error: {e}")
+        st.error(f"❌ Error: {str(e)}")
 
-# --- QUIZ GENERATOR ---
-st.markdown("---")
-st.subheader("📝 Generate Quiz")
+# --- Quiz Generator ---
+st.header("📝 Quiz Generator")
 
 if st.button("Generate Quiz"):
+    quiz_prompt = (
+        "You are a PTA tutor. Based on the following course material, create 3 multiple-choice questions. "
+        "Each should have 4 options (A–D) and include the correct answer after each question:\n\n" + pdf_text
+    )
     try:
-        quiz_prompt = (
-            "You are a PTA tutor. Based on the following material, generate 3 multiple-choice questions. "
-            "Each should have 4 options (A-D) and indicate the correct answer after each question. "
-            "Use clear, concise clinical language for PTA students:\n\n" + pdf_text
-        )
-
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": quiz_prompt}]
         )
+        quiz_text = response.choices[0].message.content
+        st.markdown("### ✏️ Quiz Output")
+        st.markdown(quiz_text)
 
-        quiz = response.choices[0].message.content
-        st.markdown("### ✅ Quiz")
-        st.markdown(quiz)
-
-        # Simulated grading (for now, we'll count all as correct to demo)
-        correct = quiz.count("**Answer:")
-        incorrect = 3 - correct
-
-        log_path = "student_logs/default_user.json"
-        os.makedirs("student_logs", exist_ok=True)
-
-        log_entry = {
-            "timestamp": datetime.now().isoformat(),
-            "course": course,
-            "quiz_text": quiz,
-            "correct": correct,
-            "incorrect": incorrect
-        }
-
-        if os.path.exists(log_path):
-            with open(log_path, "r") as f:
-                data = json.load(f)
-        else:
-            data = []
-
-        data.append(log_entry)
-
-        with open(log_path, "w") as f:
-            json.dump(data, f, indent=2)
+        # Simulated grading (you can adapt to your own logic)
+        sample_log = [
+            {
+                "question_id": "Q001",
+                "question_text": "What is the primary muscle responsible for knee extension?",
+                "user_answer": "A",
+                "correct_answer": "A",
+                "correct": 1,
+                "timestamp": datetime.now().isoformat()
+            },
+            {
+                "question_id": "Q002",
+                "question_text": "Which of the following is a contraindication to ultrasound?",
+                "user_answer": "C",
+                "correct_answer": "A",
+                "correct": 0,
+                "timestamp": datetime.now().isoformat()
+            }
+        ]
+        df = pd.read_csv(log_path)
+        df = pd.concat([df, pd.DataFrame(sample_log)], ignore_index=True)
+        df.to_csv(log_path, index=False)
 
     except Exception as e:
-        st.error(f"❌ Could not generate quiz: {e}")
+        st.error(f"❌ Failed to generate quiz: {str(e)}")
 
-# --- PERFORMANCE BAR CHART ---
-st.markdown("---")
-st.subheader("📊 Performance Summary")
+# --- Performance Summary ---
+st.header("📊 Performance Summary")
 
-log_path = "student_logs/default_user.json"
-if os.path.exists(log_path):
-    with open(log_path, "r") as f:
-        log_data = json.load(f)
-
-    df = pd.DataFrame(log_data)
+try:
+    df = pd.read_csv(log_path)
     correct_total = df["correct"].sum()
-    incorrect_total = df["incorrect"].sum()
+    incorrect_total = len(df) - correct_total
 
-    chart_data = pd.Series(
-        {"Correct": correct_total, "Incorrect": incorrect_total}
-    )
+    st.write(f"Total Questions Answered: {len(df)}")
+    st.write(f"Correct: {correct_total}, Incorrect: {incorrect_total}")
 
+    # Bar Chart
     fig, ax = plt.subplots()
-    chart_data.plot(kind="bar", color=["green", "red"], ax=ax)
-    ax.set_ylabel("Number of Questions")
-    ax.set_title("Correct vs. Incorrect")
+    ax.bar(["Correct", "Incorrect"], [correct_total, incorrect_total])
+    ax.set_ylabel("Number of Answers")
+    ax.set_title("Student Quiz Performance")
     st.pyplot(fig)
 
-    st.markdown(f"**Total Questions Answered:** {correct_total + incorrect_total}  \n"
-                f"**Correct:** {correct_total}  \n"
-                f"**Incorrect:** {incorrect_total}")
-else:
-    st.info("No quiz attempts logged yet.")
+except Exception as e:
+    st.warning("⚠️ No grading data available or error reading log.")
+    st.text(str(e))
+
