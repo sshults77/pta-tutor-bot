@@ -1,5 +1,5 @@
 streamlit
 openai
-PyPDF2
-matplotlib
 pandas
+matplotlib
+pdfplumber
