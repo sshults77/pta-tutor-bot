@@ -38,7 +38,7 @@ client = OpenAI(api_key=openai_api_key)
 
 # --- Grading log setup (Safe) ---
 log_path = Path("/mnt/data/grading_log.csv")
-log_path.parent.mkdir(parents=True, exist_ok=True)
+
 
 if not log_path.exists():
     pd.DataFrame(columns=[
