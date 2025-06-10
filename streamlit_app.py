@@ -67,11 +67,13 @@ if prompt := st.chat_input("Ask a question about your course..."):
         st.markdown(prompt)
 
     system_prompt = {
-        "role": "system",
-        "content": (
-            "You are a knowledgeable and focused PTA tutor. "
-            "Use ONLY this course content to answer questions:\n\n" + pdf_text
-        )
+    "role": "system",
+    "content": (
+        "You are a knowledgeable and focused PTA tutor. "
+        "Use ONLY this course content to answer questions:\n\n" + pdf_text
+    )
+}
+
     }
 
     try:
