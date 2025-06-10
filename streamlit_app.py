@@ -40,6 +40,7 @@ client = OpenAI(api_key=openai_api_key)
 # --- Grading log setup (Safe) ---
 log_path = Path("/mnt/data/grading_log.csv")
 
+# Create grading log if it doesn't exist
 if not log_path.exists():
     try:
         pd.DataFrame(columns=[
@@ -155,3 +156,4 @@ try:
 except Exception as e:
     st.warning("⚠️ No grading data available or error reading log.")
     st.text(str(e))
+
