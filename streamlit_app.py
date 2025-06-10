@@ -6,7 +6,6 @@ import pdfplumber
 import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime
-from pathlib import Path
 
 # Title
 st.title("📚 PTA Tutor Chatbot with Quiz & Performance Tracker")
@@ -37,14 +36,16 @@ openai.api_key = openai_api_key
 client = OpenAI(api_key=openai_api_key)
 
 # --- Grading log setup (Safe) ---
-log_path = Path("/mnt/data/grading_log.csv")
+log_path = "/mnt/data/grading_log.csv"
 
-
-if not log_path.exists():
-    pd.DataFrame(columns=[
-        "question_id", "question_text", "user_answer",
-        "correct_answer", "correct", "timestamp"
-    ]).to_csv(log_path, index=False)
+try:
+    if not os.path.exists(log_path):
+        pd.DataFrame(columns=[
+            "question_id", "question_text", "user_answer",
+            "correct_answer", "correct", "timestamp"
+        ]).to_csv(log_path, index=False)
+except PermissionError:
+    st.warning("⚠️ Unable to initialize grading log due to permission error.")
 
 # --- Chatbot Section ---
 st.header("💬 Chat with the Tutor")
@@ -120,9 +121,10 @@ if st.button("Generate Quiz"):
             }
         ]
 
-        df = pd.read_csv(log_path)
-        df = pd.concat([df, pd.DataFrame(sample_log)], ignore_index=True)
-        df.to_csv(log_path, index=False)
+        if os.path.exists(log_path):
+            df = pd.read_csv(log_path)
+            df = pd.concat([df, pd.DataFrame(sample_log)], ignore_index=True)
+            df.to_csv(log_path, index=False)
 
     except Exception as e:
         st.error(f"❌ Failed to generate quiz: {str(e)}")
@@ -131,21 +133,20 @@ if st.button("Generate Quiz"):
 st.header("📊 Performance Summary")
 
 try:
-    df = pd.read_csv(log_path)
-    correct_total = df["correct"].sum()
-    incorrect_total = len(df) - correct_total
+    if os.path.exists(log_path):
+        df = pd.read_csv(log_path)
+        correct_total = df["correct"].sum()
+        incorrect_total = len(df) - correct_total
 
-    st.write(f"Total Questions Answered: {len(df)}")
-    st.write(f"✅ Correct: {correct_total}")
-    st.write(f"❌ Incorrect: {incorrect_total}")
+        st.write(f"Total Questions Answered: {len(df)}")
+        st.write(f"✅ Correct: {correct_total}")
+        st.write(f"❌ Incorrect: {incorrect_total}")
 
-    fig, ax = plt.subplots()
-    ax.bar(["Correct", "Incorrect"], [correct_total, incorrect_total])
-    ax.set_ylabel("Number of Responses")
-    ax.set_title("Student Performance")
-    st.pyplot(fig)
-
+        fig, ax = plt.subplots()
+        ax.bar(["Correct", "Incorrect"], [correct_total, incorrect_total])
+        ax.set_ylabel("Number of Responses")
+        ax.set_title("Student Performance")
+        st.pyplot(fig)
 except Exception as e:
     st.warning("⚠️ No grading data available or error reading log.")
     st.text(str(e))
-
