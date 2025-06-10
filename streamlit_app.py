@@ -1,4 +1,3 @@
-
 import streamlit as st
 import openai
 from openai import OpenAI
@@ -30,7 +29,7 @@ def load_pdf_text(folder):
                             text += page_text
     return text
 
-pdf_text = load_pdf_text(course_folder)[:3000]
+pdf_text = load_pdf_text(course_folder)[:3000]  # Trimmed for token safety
 
 # --- OpenAI setup ---
 openai_api_key = st.secrets["openai"]["api_key"]
@@ -64,14 +63,12 @@ if prompt := st.chat_input("Ask a question about your course..."):
 
     system_prompt = {
         "role": "system",
-        "content": f"""
-You are a knowledgeable and focused PTA tutor.
+        "content": f"""You are a knowledgeable and focused PTA tutor.
 Use ONLY this course content to answer questions:
 
 {pdf_text}
 
-If the question is unrelated to the material, respond: 'I'm sorry, I can only help with the course content provided.'
-"""
+If the question is unrelated to the material, respond: 'I'm sorry, I can only help with the course content provided.'"""
     }
 
     try:
@@ -90,12 +87,11 @@ If the question is unrelated to the material, respond: 'I'm sorry, I can only he
 st.header("📝 Quiz Generator")
 
 if st.button("Generate Quiz"):
-    quiz_prompt = (
-        "You are a PTA tutor. Based on the following material, create 3 multiple-choice questions. "
-        "Each should have 4 options (A–D) and include the correct answer after each question:
+    quiz_prompt = f"""You are a PTA tutor. Based on the following material, create 3 multiple-choice questions.
+Each should have 4 options (A–D) and include the correct answer after each question:
 
-" + pdf_text
-    )
+{pdf_text}
+"""
     try:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
