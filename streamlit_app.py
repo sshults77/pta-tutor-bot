@@ -62,92 +62,10 @@ if prompt := st.chat_input("Ask a question about your course..."):
         st.markdown(prompt)
 
     system_prompt = {
-        system_prompt = {
-    "role": "system",
-    "content": (
-        f"You are a knowledgeable and focused PTA tutor.\n"
-        f"Use ONLY this course content to answer questions:\n\n"
-        f"{pdf_text}\n\n"
-        f"If the question is unrelated to the material, respond: "
-        f"'I'm sorry, I can only help with the course content provided.'"
-    )
-}
+        "role": "system",
+        "content": f"""You are a knowledgeable and focused PTA tutor.
+Use ONLY this course content to answer questions:
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[system_prompt] + st.session_state.messages
-        )
-        reply = response.choices[0].message.content
-        with st.chat_message("assistant"):
-            st.markdown(reply)
-        st.session_state.messages.append({"role": "assistant", "content": reply})
-    except Exception as e:
-        st.error(f"❌ Error: {str(e)}")
+{pdf_text}
 
-# --- Quiz Generator ---
-st.header("📝 Quiz Generator")
-
-if st.button("Generate Quiz"):
-    quiz_prompt = (
-        "You are a PTA tutor. Based on the following material, create 3 multiple-choice questions. "
-        "Each should have 4 options (A–D) and include the correct answer after each question:\n\n"
-        + pdf_text
-    )
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": quiz_prompt}]
-        )
-        quiz_text = response.choices[0].message.content
-        st.markdown("### ✏️ Quiz Output")
-        st.markdown(quiz_text)
-
-        # Simulated grading
-        sample_log = [
-            {
-                "question_id": "Q001",
-                "question_text": "What is the primary muscle responsible for knee extension?",
-                "user_answer": "A",
-                "correct_answer": "A",
-                "correct": 1,
-                "timestamp": datetime.now().isoformat()
-            },
-            {
-                "question_id": "Q002",
-                "question_text": "Which is a contraindication to ultrasound?",
-                "user_answer": "C",
-                "correct_answer": "A",
-                "correct": 0,
-                "timestamp": datetime.now().isoformat()
-            }
-        ]
-
-        df = pd.read_csv(log_path)
-        df = pd.concat([df, pd.DataFrame(sample_log)], ignore_index=True)
-        df.to_csv(log_path, index=False)
-
-    except Exception as e:
-        st.error(f"❌ Failed to generate quiz: {str(e)}")
-
-# --- Performance Summary ---
-st.header("📊 Performance Summary")
-
-try:
-    df = pd.read_csv(log_path)
-    correct_total = df["correct"].sum()
-    incorrect_total = len(df) - correct_total
-
-    st.write(f"Total Questions Answered: {len(df)}")
-    st.write(f"✅ Correct: {correct_total}")
-    st.write(f"❌ Incorrect: {incorrect_total}")
-
-    fig, ax = plt.subplots()
-    ax.bar(["Correct", "Incorrect"], [correct_total, incorrect_total])
-    ax.set_ylabel("Number of Responses")
-    ax.set_title("Student Performance")
-    st.pyplot(fig)
-
-except Exception as e:
-    st.warning("⚠️ No grading data available or error reading log.")
-    st.text(str(e))
+If the question is unrelated to the material, respond: 'I'm sorry, I can only help wi
