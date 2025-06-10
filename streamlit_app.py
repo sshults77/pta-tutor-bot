@@ -10,11 +10,11 @@ from datetime import datetime
 # Title
 st.title("📚 PTA Tutor Chatbot with Quiz & Performance Tracker")
 
-# Course selection
+# --- Course Selection ---
 course = st.selectbox("Select your course:", ["PTA_1010"])
 course_folder = f"course_materials/{course}"
 
-# Load PDF text
+# --- Load PDF content ---
 def load_pdf_text(folder):
     text = ""
     if os.path.exists(folder):
@@ -23,36 +23,40 @@ def load_pdf_text(folder):
                 file_path = os.path.join(folder, filename)
                 with pdfplumber.open(file_path) as pdf:
                     for page in pdf.pages:
-                        text += page.extract_text() or ""
+                        page_text = page.extract_text()
+                        if page_text:
+                            text += page_text
     return text
 
-pdf_text = load_pdf_text(course_folder)[:3000]  # Token limit control
+pdf_text = load_pdf_text(course_folder)[:3000]
 
-# OpenAI setup
+# --- OpenAI setup ---
 openai_api_key = st.secrets["openai"]["api_key"]
 openai.api_key = openai_api_key
 client = OpenAI(api_key=openai_api_key)
 
-# Load grading log
+# --- Grading log setup ---
 log_path = "/mnt/data/grading_log.csv"
+os.makedirs("/mnt/data", exist_ok=True)
+
 if not os.path.exists(log_path):
     pd.DataFrame(columns=[
         "question_id", "question_text", "user_answer",
         "correct_answer", "correct", "timestamp"
     ]).to_csv(log_path, index=False)
 
-# --- Chat Section ---
+# --- Chatbot Section ---
 st.header("💬 Chat with the Tutor")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display prior chat
+# Display prior messages
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Chat input
+# Handle input
 if prompt := st.chat_input("Ask a question about your course..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
@@ -83,7 +87,7 @@ st.header("📝 Quiz Generator")
 
 if st.button("Generate Quiz"):
     quiz_prompt = (
-        "You are a PTA tutor. Based on the following course material, create 3 multiple-choice questions. "
+        "You are a PTA tutor. Based on the following material, create 3 multiple-choice questions. "
         "Each should have 4 options (A–D) and include the correct answer after each question:\n\n" + pdf_text
     )
     try:
@@ -95,7 +99,7 @@ if st.button("Generate Quiz"):
         st.markdown("### ✏️ Quiz Output")
         st.markdown(quiz_text)
 
-        # Simulated grading (you can adapt to your own logic)
+        # Simulate grading for demonstration
         sample_log = [
             {
                 "question_id": "Q001",
@@ -107,13 +111,14 @@ if st.button("Generate Quiz"):
             },
             {
                 "question_id": "Q002",
-                "question_text": "Which of the following is a contraindication to ultrasound?",
+                "question_text": "Which is a contraindication to ultrasound?",
                 "user_answer": "C",
                 "correct_answer": "A",
                 "correct": 0,
                 "timestamp": datetime.now().isoformat()
             }
         ]
+
         df = pd.read_csv(log_path)
         df = pd.concat([df, pd.DataFrame(sample_log)], ignore_index=True)
         df.to_csv(log_path, index=False)
@@ -130,13 +135,13 @@ try:
     incorrect_total = len(df) - correct_total
 
     st.write(f"Total Questions Answered: {len(df)}")
-    st.write(f"Correct: {correct_total}, Incorrect: {incorrect_total}")
+    st.write(f"✅ Correct: {correct_total}")
+    st.write(f"❌ Incorrect: {incorrect_total}")
 
-    # Bar Chart
     fig, ax = plt.subplots()
     ax.bar(["Correct", "Incorrect"], [correct_total, incorrect_total])
-    ax.set_ylabel("Number of Answers")
-    ax.set_title("Student Quiz Performance")
+    ax.set_ylabel("Number of Responses")
+    ax.set_title("Student Performance")
     st.pyplot(fig)
 
 except Exception as e:
