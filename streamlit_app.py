@@ -61,7 +61,7 @@ if prompt := st.chat_input("Ask a question about your course..."):
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    system_prompt = {
+   system_prompt = {
     "role": "system",
     "content": f"""You are a knowledgeable and focused PTA tutor.
 Use ONLY this course content to answer questions:
@@ -71,7 +71,7 @@ Use ONLY this course content to answer questions:
 If the question is unrelated to the material, respond: 'I'm sorry, I can only help with the course content provided.'"""
 }
 
-    try:
+try:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[system_prompt] + st.session_state.messages
