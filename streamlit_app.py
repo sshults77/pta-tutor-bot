@@ -38,16 +38,12 @@ openai.api_key = openai_api_key
 client = OpenAI(api_key=openai_api_key)
 
 # --- Grading log setup (Safe) ---
-log_path = Path("/mnt/data/grading_log.csv")
-
+log_path = Path("grading_log.csv")
 if not log_path.exists():
-    try:
-        pd.DataFrame(columns=[
-            "question_id", "question_text", "user_answer",
-            "correct_answer", "correct", "timestamp"
-        ]).to_csv(log_path, index=False)
-    except Exception as e:
-        st.warning(f"⚠️ Could not create grading log: {str(e)}")
+    pd.DataFrame(columns=[
+        "question_id", "question_text", "user_answer",
+        "correct_answer", "correct", "timestamp"
+    ]).to_csv(log_path, index=False)
 
 # --- Chatbot Section ---
 st.header("💬 Chat with the Tutor")
@@ -67,13 +63,15 @@ if prompt := st.chat_input("Ask a question about your course..."):
         st.markdown(prompt)
 
     system_prompt = {
-    "role": "system",
-    "content": (
-        "You are a knowledgeable and focused PTA tutor. "
-        "Use ONLY this course content to answer questions:\n\n" + pdf_text
-    )
-}
+        "role": "system",
+        "content": f"""
+You are a knowledgeable and focused PTA tutor.
+Use ONLY this course content to answer questions:
 
+{pdf_text}
+
+If the question is not related to the course content, kindly respond that you cannot answer based on the material provided.
+"""
     }
 
     try:
@@ -94,7 +92,9 @@ st.header("📝 Quiz Generator")
 if st.button("Generate Quiz"):
     quiz_prompt = (
         "You are a PTA tutor. Based on the following material, create 3 multiple-choice questions. "
-        "Each should have 4 options (A–D) and include the correct answer after each question:\n\n" + pdf_text
+        "Each should have 4 options (A–D) and include the correct answer after each question:
+
+" + pdf_text
     )
     try:
         response = client.chat.completions.create(
@@ -153,4 +153,3 @@ try:
 except Exception as e:
     st.warning("⚠️ No grading data available or error reading log.")
     st.text(str(e))
-
