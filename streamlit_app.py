@@ -63,16 +63,14 @@ if prompt := st.chat_input("Ask a question about your course..."):
         st.markdown(prompt)
 
     system_prompt = {
-       system_prompt = {
-    "role": "system",
-    "content": "You are a knowledgeable and focused PTA tutor. Use ONLY this course content to answer questions:\n\n" + pdf_text
-}
-
+        "role": "system",
+        "content": f"""
+You are a knowledgeable and focused PTA tutor.
 Use ONLY this course content to answer questions:
 
 {pdf_text}
 
-If the question is not related to the course content, kindly respond that you cannot answer based on the material provided.
+If the question is unrelated to the material, respond: 'I'm sorry, I can only help with the course content provided.'
 """
     }
 
@@ -107,7 +105,7 @@ if st.button("Generate Quiz"):
         st.markdown("### ✏️ Quiz Output")
         st.markdown(quiz_text)
 
-        # Simulate grading for demonstration
+        # Simulated grading for demonstration
         sample_log = [
             {
                 "question_id": "Q001",
