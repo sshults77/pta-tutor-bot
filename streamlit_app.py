@@ -37,8 +37,8 @@ client = OpenAI(api_key=openai_api_key)
 
 # --- Grading log setup ---
 log_path = "/mnt/data/grading_log.csv"
-os.makedirs("/mnt/data", exist_ok=True)
 
+# ✅ Create the grading log file if it doesn't exist
 if not os.path.exists(log_path):
     pd.DataFrame(columns=[
         "question_id", "question_text", "user_answer",
