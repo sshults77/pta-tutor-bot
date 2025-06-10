@@ -62,15 +62,16 @@ if prompt := st.chat_input("Ask a question about your course..."):
         st.markdown(prompt)
 
     system_prompt = {
-        "role": "system",
-        "content": (
-            f"You are a knowledgeable and focused PTA tutor.\n"
-            f"Use ONLY this course content to answer questions:\n\n"
-            f"{pdf_text}\n\n"
-            f"If the question is unrelated to the material, respond: "
-            f"'I'm sorry, I can only help with the course content provided.'"
-        )
-    }
+        system_prompt = {
+    "role": "system",
+    "content": (
+        f"You are a knowledgeable and focused PTA tutor.\n"
+        f"Use ONLY this course content to answer questions:\n\n"
+        f"{pdf_text}\n\n"
+        f"If the question is unrelated to the material, respond: "
+        f"'I'm sorry, I can only help with the course content provided.'"
+    )
+}
 
     try:
         response = client.chat.completions.create(
