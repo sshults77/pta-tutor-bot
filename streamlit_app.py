@@ -6,6 +6,7 @@ import pdfplumber
 import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime
+from pathlib import Path
 
 # Title
 st.title("📚 PTA Tutor Chatbot with Quiz & Performance Tracker")
@@ -35,11 +36,11 @@ openai_api_key = st.secrets["openai"]["api_key"]
 openai.api_key = openai_api_key
 client = OpenAI(api_key=openai_api_key)
 
-# --- Grading log setup ---
-log_path = "/mnt/data/grading_log.csv"
+# --- Grading log setup (Safe) ---
+log_path = Path("/mnt/data/grading_log.csv")
+log_path.parent.mkdir(parents=True, exist_ok=True)
 
-# ✅ Create the grading log file if it doesn't exist
-if not os.path.exists(log_path):
+if not log_path.exists():
     pd.DataFrame(columns=[
         "question_id", "question_text", "user_answer",
         "correct_answer", "correct", "timestamp"
