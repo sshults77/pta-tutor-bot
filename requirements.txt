@@ -3,3 +3,4 @@ openai
 pandas
 matplotlib
 pdfplumber
+python-pptx
