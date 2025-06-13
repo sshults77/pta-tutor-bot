@@ -135,8 +135,18 @@ If the question is unrelated to the material, respond: 'I'm sorry, I can only he
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
         
-# --- Quiz Generator ---
+# --- Quiz Generator with Bloom's Taxonomy Selection ---
 st.header("📝 Quiz Generator")
+
+bloom_option = st.selectbox(
+    "Choose Bloom's Taxonomy Level for Questions:",
+    [
+        "2 (Comprehension)",
+        "3 (Application)",
+        "4 (Analysis)",
+        "Mixed (2, 3, and 4)"
+    ]
+)
 
 if st.button("Generate Quiz"):
     # Use pptx_text > txt_text > pdf_text
@@ -147,11 +157,32 @@ if st.button("Generate Quiz"):
     else:
         course_content = pdf_text
 
+    # Prepare the Bloom's level part for the prompt
+    if bloom_option.startswith("Mixed"):
+        blooms_instruction = (
+            "Generate 3 NPTE-style multiple-choice questions: "
+            "one at Bloom's Level 2 (Comprehension), "
+            "one at Level 3 (Application), and one at Level 4 (Analysis). "
+        )
+    else:
+        level = bloom_option[0]
+        blooms_instruction = (
+            f"Generate 3 NPTE-style multiple-choice questions at Bloom's Level {level} "
+            f"({'Comprehension' if level=='2' else 'Application' if level=='3' else 'Analysis'}). "
+        )
+
     quiz_prompt = (
-        "You are a PTA tutor. Based on the following material, create 3 multiple-choice questions. "
-        "Each should have 4 options (A–D) and include the correct answer after each question:\n\n"
+        f"You are a Physical Therapist Assistant tutor. Based on the following course content, "
+        f"{blooms_instruction}"
+        "For each question: "
+        "1) State the Bloom's Taxonomy level, "
+        "2) Present the question in official NPTE exam style, "
+        "3) Provide 4 answer options (A-D), "
+        "4) List the correct answer after each question. "
+        "Use only the provided material.\n\n"
         + course_content
     )
+
     try:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
