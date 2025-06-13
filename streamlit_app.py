@@ -33,7 +33,23 @@ def load_pdf_text(folder):
 
 pdf_text = load_pdf_text(course_folder)[:3000]
 
-# --- NEW: PowerPoint notes extraction ---
+# --- Load TXT content (NEW) ---
+def load_txt_content(folder):
+    # Look for a file ending in .txt in the course folder
+    txt_file = None
+    if os.path.exists(folder):
+        for filename in os.listdir(folder):
+            if filename.endswith(".txt"):
+                txt_file = os.path.join(folder, filename)
+                break
+    if txt_file:
+        with open(txt_file, "r", encoding="utf-8") as f:
+            return f.read()
+    return ""
+
+txt_text = load_txt_content(course_folder)[:3000]  # Limit to 3000 chars for GPT
+
+# --- PowerPoint notes extraction (unchanged) ---
 def extract_notes_from_uploaded_pptx(uploaded_file):
     prs = Presentation(uploaded_file)
     all_notes = []
@@ -45,7 +61,7 @@ def extract_notes_from_uploaded_pptx(uploaded_file):
         all_notes.append(f"{slide_title}:\n{notes_text}\n")
     return "\n".join(all_notes)
 
-# --- PPTX Upload UI ---
+# --- PPTX Upload UI (unchanged) ---
 st.sidebar.header("Optional: Upload PowerPoint for Chatbot Content")
 uploaded_pptx = st.sidebar.file_uploader("Upload a PowerPoint (.pptx)", type="pptx")
 pptx_text = ""
@@ -83,8 +99,18 @@ if prompt := st.chat_input("Ask a question about your course..."):
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # --- Use pptx_text if available, otherwise pdf_text ---
-    course_content = pptx_text if pptx_text else pdf_text
+    # --- PRIORITY: pptx_text > txt_text > pdf_text ---
+    if pptx_text:
+        course_content = pptx_text
+        content_source = "PowerPoint notes"
+    elif txt_text:
+        course_content = txt_text
+        content_source = "Text file"
+    else:
+        course_content = pdf_text
+        content_source = "PDF"
+
+    st.info(f"Chatbot is using: {content_source}")
 
     system_prompt = {
         "role": "system",
@@ -113,8 +139,13 @@ If the question is unrelated to the material, respond: 'I'm sorry, I can only he
 st.header("📝 Quiz Generator")
 
 if st.button("Generate Quiz"):
-    # Use pptx_text if available, otherwise pdf_text
-    course_content = pptx_text if pptx_text else pdf_text
+    # Use pptx_text > txt_text > pdf_text
+    if pptx_text:
+        course_content = pptx_text
+    elif txt_text:
+        course_content = txt_text
+    else:
+        course_content = pdf_text
 
     quiz_prompt = (
         "You are a PTA tutor. Based on the following material, create 3 multiple-choice questions. "
