@@ -8,16 +8,13 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime
 from pathlib import Path
-from pptx import Presentation  # <-- NEW!
+from pptx import Presentation
 
-# Title
 st.title("📚 PTA Tutor Chatbot with Quiz & Performance Tracker")
 
-# --- Course Selection ---
 course = st.selectbox("Select your course:", ["PTA_1010"])
 course_folder = f"course_materials/{course}"
 
-# --- Load PDF content ---
 def load_pdf_text(folder):
     text = ""
     if os.path.exists(folder):
@@ -33,9 +30,7 @@ def load_pdf_text(folder):
 
 pdf_text = load_pdf_text(course_folder)[:3000]
 
-# --- Load TXT content (NEW) ---
 def load_txt_content(folder):
-    # Look for a file ending in .txt in the course folder
     txt_file = None
     if os.path.exists(folder):
         for filename in os.listdir(folder):
@@ -47,9 +42,8 @@ def load_txt_content(folder):
             return f.read()
     return ""
 
-txt_text = load_txt_content(course_folder)[:3000]  # Limit to 3000 chars for GPT
+txt_text = load_txt_content(course_folder)[:3000]
 
-# --- PowerPoint notes extraction (unchanged) ---
 def extract_notes_from_uploaded_pptx(uploaded_file):
     prs = Presentation(uploaded_file)
     all_notes = []
@@ -61,7 +55,6 @@ def extract_notes_from_uploaded_pptx(uploaded_file):
         all_notes.append(f"{slide_title}:\n{notes_text}\n")
     return "\n".join(all_notes)
 
-# --- PPTX Upload UI (unchanged) ---
 st.sidebar.header("Optional: Upload PowerPoint for Chatbot Content")
 uploaded_pptx = st.sidebar.file_uploader("Upload a PowerPoint (.pptx)", type="pptx")
 pptx_text = ""
@@ -69,12 +62,10 @@ if uploaded_pptx:
     pptx_text = extract_notes_from_uploaded_pptx(uploaded_pptx)
     st.sidebar.success("PowerPoint notes extracted. Chatbot will use these as course content.")
 
-# --- OpenAI setup ---
 openai_api_key = st.secrets["openai"]["api_key"]
 openai.api_key = openai_api_key
 client = OpenAI(api_key=openai_api_key)
 
-# --- Grading log setup ---
 log_path = Path("grading_log.csv")
 if not log_path.exists():
     pd.DataFrame(columns=[
@@ -82,24 +73,20 @@ if not log_path.exists():
         "correct_answer", "correct", "timestamp"
     ]).to_csv(log_path, index=False)
 
-# --- Chatbot Section ---
 st.header("💬 Chat with the Tutor")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display prior messages
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Handle input
 if prompt := st.chat_input("Ask a question about your course..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # --- PRIORITY: pptx_text > txt_text > pdf_text ---
     if pptx_text:
         course_content = pptx_text
         content_source = "PowerPoint notes"
@@ -134,22 +121,23 @@ If the question is unrelated to the material, respond: 'I'm sorry, I can only he
         st.session_state.messages.append({"role": "assistant", "content": reply})
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
-        
-# --- Quiz Generator with Bloom's Taxonomy Selection ---
+
+# --- Quiz Generator with Blooms Levels 1–5 ---
 st.header("📝 Quiz Generator")
 
 bloom_option = st.selectbox(
-    "Choose Bloom's Taxonomy Level for Questions:",
+    "Choose Bloom's Taxonomy Level for Quiz:",
     [
+        "1 (Recall/Knowledge)",
         "2 (Comprehension)",
         "3 (Application)",
         "4 (Analysis)",
-        "Mixed (2, 3, and 4)"
+        "5 (Synthesis/Evaluation)",
+        "Mixed (Levels 1–5)"
     ]
 )
 
 if st.button("Generate Quiz"):
-    # Use pptx_text > txt_text > pdf_text
     if pptx_text:
         course_content = pptx_text
     elif txt_text:
@@ -157,18 +145,26 @@ if st.button("Generate Quiz"):
     else:
         course_content = pdf_text
 
-    # Prepare the Bloom's level part for the prompt
+    blooms_level_map = {
+        "1": "Recall/Knowledge",
+        "2": "Comprehension",
+        "3": "Application",
+        "4": "Analysis",
+        "5": "Synthesis/Evaluation"
+    }
+
     if bloom_option.startswith("Mixed"):
         blooms_instruction = (
-            "Generate 3 NPTE-style multiple-choice questions: "
-            "one at Bloom's Level 2 (Comprehension), "
-            "one at Level 3 (Application), and one at Level 4 (Analysis). "
+            "Generate 5 NPTE-style multiple-choice questions: "
+            "one each at Bloom's Level 1 (Recall/Knowledge), "
+            "Level 2 (Comprehension), Level 3 (Application), "
+            "Level 4 (Analysis), and Level 5 (Synthesis/Evaluation). "
         )
     else:
         level = bloom_option[0]
+        level_name = blooms_level_map.get(level, "")
         blooms_instruction = (
-            f"Generate 3 NPTE-style multiple-choice questions at Bloom's Level {level} "
-            f"({'Comprehension' if level=='2' else 'Application' if level=='3' else 'Analysis'}). "
+            f"Generate 5 NPTE-style multiple-choice questions at Bloom's Level {level} ({level_name}). "
         )
 
     quiz_prompt = (
@@ -219,7 +215,6 @@ if st.button("Generate Quiz"):
     except Exception as e:
         st.error(f"❌ Failed to generate quiz: {str(e)}")
 
-# --- Performance Summary with Expander ---
 with st.expander("📊 Show Performance Summary", expanded=False):
     try:
         df = pd.read_csv(log_path)
