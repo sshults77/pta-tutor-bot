@@ -9,7 +9,39 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 from pathlib import Path
 from pptx import Presentation
+import streamlit_authenticator as stauth
 
+# --------------- USER LOGIN/PROFILE SETUP -----------------
+# --- You can later load users/passwords from YAML file or database for production
+
+users = {
+    "usernames": {
+        "student1": {"name": "Alice Example", "password": stauth.Hasher(['student1pass']).generate()[0], "role": "student"},
+        "student2": {"name": "Bob Example", "password": stauth.Hasher(['student2pass']).generate()[0], "role": "student"},
+        "admin1":   {"name": "Dr. Admin", "password": stauth.Hasher(['adminpass']).generate()[0], "role": "admin"},
+    }
+}
+
+authenticator = stauth.Authenticate(
+    users["usernames"],
+    "pta_tutor_bot_cookie", "pta_tutor_bot_key", cookie_expiry_days=3
+)
+
+name, authentication_status, username = authenticator.login("Login", "main")
+
+if authentication_status is False:
+    st.error("Username/password is incorrect")
+    st.stop()
+elif authentication_status is None:
+    st.warning("Please enter your username and password")
+    st.stop()
+
+authenticator.logout("Logout", "sidebar")
+st.sidebar.write(f"Logged in as: **{name}** ({username})")
+
+user_role = users["usernames"][username]["role"]  # 'student' or 'admin'
+
+# --------------- REST OF YOUR APP -----------------
 st.title("📚 PTA Tutor Chatbot with Quiz & Performance Tracker")
 
 course = st.selectbox("Select your course:", ["PTA_1010"])
@@ -66,10 +98,11 @@ openai_api_key = st.secrets["openai"]["api_key"]
 openai.api_key = openai_api_key
 client = OpenAI(api_key=openai_api_key)
 
+# --- Now add username to grading log
 log_path = Path("grading_log.csv")
 if not log_path.exists():
     pd.DataFrame(columns=[
-        "question_id", "question_text", "user_answer",
+        "username", "question_id", "question_text", "user_answer",
         "correct_answer", "correct", "timestamp"
     ]).to_csv(log_path, index=False)
 
@@ -191,6 +224,7 @@ if st.button("Generate Quiz"):
         # Simulated grading
         sample_log = [
             {
+                "username": username,  # Log the user
                 "question_id": "Q001",
                 "question_text": "What is the primary muscle responsible for knee extension?",
                 "user_answer": "A",
@@ -199,6 +233,7 @@ if st.button("Generate Quiz"):
                 "timestamp": datetime.now().isoformat()
             },
             {
+                "username": username,
                 "question_id": "Q002",
                 "question_text": "Which is a contraindication to ultrasound?",
                 "user_answer": "C",
@@ -218,10 +253,15 @@ if st.button("Generate Quiz"):
 with st.expander("📊 Show Performance Summary", expanded=False):
     try:
         df = pd.read_csv(log_path)
-        correct_total = df["correct"].sum()
-        incorrect_total = len(df) - correct_total
+        # Only show the current user's results (unless admin)
+        if user_role == "admin":
+            user_df = df
+        else:
+            user_df = df[df["username"] == username]
+        correct_total = user_df["correct"].sum()
+        incorrect_total = len(user_df) - correct_total
 
-        st.write(f"Total Questions Answered: {len(df)}")
+        st.write(f"Total Questions Answered: {len(user_df)}")
         st.write(f"✅ Correct: {correct_total}")
         st.write(f"❌ Incorrect: {incorrect_total}")
 
