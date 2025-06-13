@@ -188,24 +188,23 @@ if st.button("Generate Quiz"):
     except Exception as e:
         st.error(f"❌ Failed to generate quiz: {str(e)}")
 
-# --- Performance Summary ---
-st.header("📊 Performance Summary")
+# --- Performance Summary with Expander ---
+with st.expander("📊 Show Performance Summary", expanded=False):
+    try:
+        df = pd.read_csv(log_path)
+        correct_total = df["correct"].sum()
+        incorrect_total = len(df) - correct_total
 
-try:
-    df = pd.read_csv(log_path)
-    correct_total = df["correct"].sum()
-    incorrect_total = len(df) - correct_total
+        st.write(f"Total Questions Answered: {len(df)}")
+        st.write(f"✅ Correct: {correct_total}")
+        st.write(f"❌ Incorrect: {incorrect_total}")
 
-    st.write(f"Total Questions Answered: {len(df)}")
-    st.write(f"✅ Correct: {correct_total}")
-    st.write(f"❌ Incorrect: {incorrect_total}")
+        fig, ax = plt.subplots()
+        ax.bar(["Correct", "Incorrect"], [correct_total, incorrect_total])
+        ax.set_ylabel("Number of Responses")
+        ax.set_title("Student Performance")
+        st.pyplot(fig)
 
-    fig, ax = plt.subplots()
-    ax.bar(["Correct", "Incorrect"], [correct_total, incorrect_total])
-    ax.set_ylabel("Number of Responses")
-    ax.set_title("Student Performance")
-    st.pyplot(fig)
-
-except Exception as e:
-    st.warning("⚠️ No grading data available or error reading log.")
-    st.text(str(e))
+    except Exception as e:
+        st.warning("⚠️ No grading data available or error reading log.")
+        st.text(str(e))
