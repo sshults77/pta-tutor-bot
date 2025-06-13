@@ -4,3 +4,5 @@ pandas
 matplotlib
 pdfplumber
 python-pptx
+streamlit-authenticator
+PyYAML
