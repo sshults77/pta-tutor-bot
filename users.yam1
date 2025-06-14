@@ -3,18 +3,23 @@ credentials:
     student1:
       email: alice@example.com
       name: Alice Example
-      password: "$2b$12$8TgoZ5KLjlbYJLKf0bq6TeLEKM2lAjDyvHntr.x2ZnBqAbX1CGWn2"  # Replace with your hash!
+      password: "$2b$12$8TgoZ5KLjlbYJLKf0bq6TeLEKM2lAjDyvHntr.x2ZnBqAbX1CGWn2"
       role: student
     student2:
       email: bob@example.com
       name: Bob Example
-      password: "$2b$12$dfqOZNKUm67O8y8gktQG8OYq8xO67i54i6GXgFV5QbfO5EyaV6ShK"  # Replace with your hash!
+      password: "$2b$12$dfqOZNKUm67O8y8gktQG8OYq8xO67i54i6GXgFV5QbfO5EyaV6ShK"
       role: student
     admin1:
       email: admin@example.com
       name: Dr. Admin
-      password: "$2b$12$glNcZ82f6r9gZW4lqVUM4egUS7LCyDJJUJP3UoZ0A1nCMz3lGJpgK"  # Replace with your hash!
+      password: "$2b$12$glNcZ82f6r9gZW4lqVUM4egUS7LCyDJJUJP3UoZ0A1nCMz3lGJpgK"
       role: admin
+    janedoe:
+      email: jane@example.com
+      name: Jane Doe
+      password: "$2b$12$6EUTfvtmvVLwnwJsK0Xpj.Jo3LDgfjRBcBQgObnFiEiYyEqZHObZ6"
+      role: student
 cookie:
   expiry_days: 3
   key: some_signature_key
