@@ -24,11 +24,14 @@ authenticator = stauth.Authenticate(
     config['cookie']['name'],
     config['cookie']['key'],
     config['cookie']['expiry_days']
-    # (No preauthorized parameter here!)
+    # No preauthorized parameter
 )
 
-# Correctly specify login location as a keyword argument
-name, authentication_status, username = authenticator.login("Login", location="main")
+# CORRECT: Use keyword arguments for login (no positional args)
+name, authentication_status, username = authenticator.login(
+    location="main",
+    fields={'Form name': 'Login'}
+)
 
 if authentication_status is False:
     st.error("Username/password is incorrect")
