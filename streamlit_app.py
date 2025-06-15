@@ -10,21 +10,21 @@ from datetime import datetime
 from pathlib import Path
 from pptx import Presentation
 import streamlit_authenticator as stauth
+import yaml
+from yaml.loader import SafeLoader
 
-# --------------- USER LOGIN/PROFILE SETUP -----------------
-# --- You can later load users/passwords from YAML file or database for production
+# --------------- USER LOGIN/PROFILE SETUP (NEW - uses YAML) -----------------
 
-users = {
-    "usernames": {
-        "student1": {"name": "Alice Example", "password": stauth.Hasher(['student1pass']).generate()[0], "role": "student"},
-        "student2": {"name": "Bob Example", "password": stauth.Hasher(['student2pass']).generate()[0], "role": "student"},
-        "admin1":   {"name": "Dr. Admin", "password": stauth.Hasher(['adminpass']).generate()[0], "role": "admin"},
-    }
-}
+# Load user credentials from external YAML file
+with open("users.yaml") as file:
+    config = yaml.load(file, Loader=SafeLoader)
 
 authenticator = stauth.Authenticate(
-    users["usernames"],
-    "pta_tutor_bot_cookie", "pta_tutor_bot_key", cookie_expiry_days=3
+    config['credentials'],
+    config['cookie']['name'],
+    config['cookie']['key'],
+    config['cookie']['expiry_days'],
+    config['preauthorized']
 )
 
 name, authentication_status, username = authenticator.login("Login", "main")
@@ -39,7 +39,7 @@ elif authentication_status is None:
 authenticator.logout("Logout", "sidebar")
 st.sidebar.write(f"Logged in as: **{name}** ({username})")
 
-user_role = users["usernames"][username]["role"]  # 'student' or 'admin'
+user_role = config["credentials"]["usernames"][username]["role"]  # 'student' or 'admin'
 
 # --------------- REST OF YOUR APP -----------------
 st.title("📚 PTA Tutor Chatbot with Quiz & Performance Tracker")
