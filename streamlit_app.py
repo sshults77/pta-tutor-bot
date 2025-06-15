@@ -13,7 +13,7 @@ import streamlit_authenticator as stauth
 import yaml
 from yaml.loader import SafeLoader
 
-# --------------- USER LOGIN/PROFILE SETUP (NEW - uses YAML) -----------------
+# --------------- USER LOGIN/PROFILE SETUP (YAML-based) -----------------
 
 # Load user credentials from external YAML file
 with open("users.yaml") as file:
@@ -23,8 +23,8 @@ authenticator = stauth.Authenticate(
     config['credentials'],
     config['cookie']['name'],
     config['cookie']['key'],
-    config['cookie']['expiry_days'],
-    config['preauthorized']
+    config['cookie']['expiry_days']
+    # (No preauthorized parameter here!)
 )
 
 name, authentication_status, username = authenticator.login("Login", "main")
