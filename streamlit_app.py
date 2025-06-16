@@ -48,7 +48,8 @@ if isinstance(login_result, tuple):
         st.stop()
 else:
     st.error("Unexpected login return type.")
-    st.write(login_result)
+    st.write("Type:", type(login_result))
+    st.write("Value:", login_result)
     st.stop()
 
 if authentication_status is False:
