@@ -14,7 +14,6 @@ from yaml.loader import SafeLoader
 
 # --------------- USER LOGIN/PROFILE SETUP (YAML-based) -----------------
 
-# Load user credentials from external YAML file
 with open("users.yaml") as file:
     config = yaml.load(file, Loader=SafeLoader)
 
@@ -35,7 +34,10 @@ except Exception as e:
     st.error(f"Authenticator error: {e}")
     st.stop()
 
-# Unpack results
+# Only proceed after user submits the form:
+if login_result is None:
+    st.stop()
+
 if isinstance(login_result, tuple):
     if len(login_result) == 2:
         name, authentication_status = login_result
@@ -62,7 +64,7 @@ elif authentication_status is None:
 authenticator.logout("Logout", "sidebar")
 st.sidebar.write(f"Logged in as: **{name}** ({username})")
 
-user_role = config["credentials"]["usernames"][username]["role"]  # 'student' or 'admin'
+user_role = config["credentials"]["usernames"][username]["role"]
 
 # --------------- REST OF YOUR APP -----------------
 st.title("📚 PTA Tutor Chatbot with Quiz & Performance Tracker")
