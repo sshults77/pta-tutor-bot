@@ -1,4 +1,3 @@
-# Force Streamlit Cloud Redeploy
 import streamlit as st
 import openai
 from openai import OpenAI
@@ -26,12 +25,33 @@ authenticator = stauth.Authenticate(
     config['cookie']['expiry_days']
 )
 
-# CORRECT: Only TWO return values from login; username is accessed as authenticator.username
-name, authentication_status = authenticator.login(
-    location="main",
-    fields={'Form name': 'Login'}
-)
-username = authenticator.username  # <--- this is how you get the username
+# ----- UNIVERSAL LOGIN BLOCK -----
+try:
+    # Try with two values (modern)
+    name, authentication_status = authenticator.login(
+        location="main",
+        fields={'Form name': 'Login'}
+    )
+    try:
+        username = authenticator.username
+    except Exception:
+        username = None
+except TypeError:
+    try:
+        # Try with three values (older)
+        name, authentication_status, username = authenticator.login(
+            location="main",
+            fields={'Form name': 'Login'}
+        )
+    except Exception as e:
+        # Fallback: print whatever is returned
+        login_result = authenticator.login(location="main", fields={'Form name': 'Login'})
+        st.write("Unknown login return type:", login_result)
+        raise e  # Optional: comment out if you want to just inspect
+
+# If authenticator.username works, always use that
+if hasattr(authenticator, "username"):
+    username = authenticator.username
 
 if authentication_status is False:
     st.error("Username/password is incorrect")
