@@ -27,31 +27,29 @@ authenticator = stauth.Authenticate(
 
 # ----- UNIVERSAL LOGIN BLOCK -----
 try:
-    # Try with two values (modern)
-    name, authentication_status = authenticator.login(
+    login_result = authenticator.login(
         location="main",
         fields={'Form name': 'Login'}
     )
-    try:
-        username = authenticator.username
-    except Exception:
-        username = None
-except TypeError:
-    try:
-        # Try with three values (older)
-        name, authentication_status, username = authenticator.login(
-            location="main",
-            fields={'Form name': 'Login'}
-        )
-    except Exception as e:
-        # Fallback: print whatever is returned
-        login_result = authenticator.login(location="main", fields={'Form name': 'Login'})
-        st.write("Unknown login return type:", login_result)
-        raise e  # Optional: comment out if you want to just inspect
+except Exception as e:
+    st.error(f"Authenticator error: {e}")
+    st.stop()
 
-# If authenticator.username works, always use that
-if hasattr(authenticator, "username"):
-    username = authenticator.username
+# Unpack results
+if isinstance(login_result, tuple):
+    if len(login_result) == 2:
+        name, authentication_status = login_result
+        username = getattr(authenticator, "username", None)
+    elif len(login_result) == 3:
+        name, authentication_status, username = login_result
+    else:
+        st.error("Unknown login return value structure.")
+        st.write(login_result)
+        st.stop()
+else:
+    st.error("Unexpected login return type.")
+    st.write(login_result)
+    st.stop()
 
 if authentication_status is False:
     st.error("Username/password is incorrect")
