@@ -11,9 +11,9 @@ credentials:
       password: "$2b$12$dfqOZNKUm67O8y8gktQG8OYq8xO67i54i6GXgFV5QbfO5EyaV6ShK"
       role: student
     admin1:
-      email: admin@example.com
-      name: Dr. Admin
-      password: "$2b$12$glNcZ82f6r9gZW4lqVUM4egUS7LCyDJJUJP3UoZ0A1nCMz3lGJpgK"
+      email: sshults@south.edu
+      name: Steven Shults 
+      password: "Admin112"
       role: admin
     janedoe:
       email: jane@example.com
