@@ -1,5 +1,5 @@
-import streamlit as st
 import streamlit_authenticator as stauth
+st.write("streamlit-authenticator version:", stauth.__version__)
 import yaml
 from yaml.loader import SafeLoader
 
@@ -13,7 +13,7 @@ authenticator = stauth.Authenticate(
     config['cookie']['expiry_days']
 )
 
-login_result = authenticator.login('Login', location='main')
+login_result = authenticator.login('Login')
 st.write("login_result:", login_result)
 
 if login_result is None:
