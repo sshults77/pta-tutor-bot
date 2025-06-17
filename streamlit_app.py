@@ -12,8 +12,7 @@ import streamlit_authenticator as stauth
 import yaml
 from yaml.loader import SafeLoader
 
-# --------------- USER LOGIN/PROFILE SETUP (YAML-based) -----------------
-
+# ------ LOGIN SECTION ------
 with open("users.yaml") as file:
     config = yaml.load(file, Loader=SafeLoader)
 
@@ -24,7 +23,7 @@ authenticator = stauth.Authenticate(
     config['cookie']['expiry_days']
 )
 
-# ----- UNIVERSAL LOGIN BLOCK -----
+# ---- Robust login result handler ----
 try:
     login_result = authenticator.login(
         location="main",
@@ -34,7 +33,6 @@ except Exception as e:
     st.error(f"Authenticator error: {e}")
     st.stop()
 
-# Only proceed after user submits the form:
 if login_result is None:
     st.stop()
 
@@ -66,7 +64,7 @@ st.sidebar.write(f"Logged in as: **{name}** ({username})")
 
 user_role = config["credentials"]["usernames"][username]["role"]
 
-# --------------- REST OF YOUR APP -----------------
+# ------ MAIN APP SECTION ------
 st.title("📚 PTA Tutor Chatbot with Quiz & Performance Tracker")
 
 course = st.selectbox("Select your course:", ["PTA_1010"])
@@ -123,7 +121,6 @@ openai_api_key = st.secrets["openai"]["api_key"]
 openai.api_key = openai_api_key
 client = OpenAI(api_key=openai_api_key)
 
-# --- Now add username to grading log
 log_path = Path("grading_log.csv")
 if not log_path.exists():
     pd.DataFrame(columns=[
