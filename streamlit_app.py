@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 from pathlib import Path
 from pptx import Presentation
-import openai
+from openai import OpenAI  # <--- NEW!
 
 # --- Load users from YAML ---
 with open('users.yaml') as file:
@@ -103,9 +103,9 @@ if uploaded_pptx:
     pptx_text = extract_notes_from_uploaded_pptx(uploaded_pptx)
     st.sidebar.success("PowerPoint notes extracted. Chatbot will use these as course content.")
 
-# --- OpenAI setup (NO OpenAI object needed) ---
+# --- OpenAI setup (NEW SDK method) ---
 openai_api_key = st.secrets["openai"]["api_key"]
-openai.api_key = openai_api_key
+client = OpenAI(api_key=openai_api_key)   # <--- NEW!
 
 log_path = Path("grading_log.csv")
 if not log_path.exists():
@@ -152,11 +152,11 @@ If the question is unrelated to the material, respond: 'I'm sorry, I can only he
     }
 
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[system_prompt] + st.session_state.messages
         )
-        reply = response['choices'][0]['message']['content']
+        reply = response.choices[0].message.content
         with st.chat_message("assistant"):
             st.markdown(reply)
         st.session_state.messages.append({"role": "assistant", "content": reply})
@@ -221,11 +221,11 @@ if st.button("Generate Quiz"):
     )
 
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": quiz_prompt}]
         )
-        quiz_text = response['choices'][0]['message']['content']
+        quiz_text = response.choices[0].message.content
         st.markdown("### ✏️ Quiz Output")
         st.markdown(quiz_text)
 
