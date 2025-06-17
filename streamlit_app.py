@@ -14,7 +14,7 @@ authenticator = stauth.Authenticate(
     config['cookie']['expiry_days']
 )
 
-login_result = authenticator.login('Login', location='main')
+login_result = authenticator.login('Login')
 
 if login_result is None:
     st.stop()
