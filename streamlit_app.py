@@ -3,7 +3,6 @@ import streamlit_authenticator as stauth
 import yaml
 from yaml.loader import SafeLoader
 
-# ---- LOGIN BLOCK (Only for debug!) ----
 with open('users.yaml') as file:
     config = yaml.load(file, Loader=SafeLoader)
 
@@ -14,15 +13,19 @@ authenticator = stauth.Authenticate(
     config['cookie']['expiry_days']
 )
 
-login_result = authenticator.login()
+login_result = authenticator.login('Login')
+st.write("login_result:", login_result)  # Debug print
 
 if login_result is None:
+    st.write("login_result is None, stopping.")
     st.stop()
 
 if isinstance(login_result, tuple):
+    st.write("login_result is tuple:", login_result)
     if len(login_result) == 2:
         name, authentication_status = login_result
         username = getattr(authenticator, "username", None)
+        st.write("username:", username)
     elif len(login_result) == 3:
         name, authentication_status, username = login_result
     else:
@@ -35,11 +38,15 @@ else:
     st.write("Value:", login_result)
     st.stop()
 
-if authentication_status:
-    authenticator.logout("Logout", "sidebar")
-    st.sidebar.write(f"Logged in as: **{name}** ({username})")
-    st.success("Login success! You now see the main app.")
-    st.write("Put your main app code here!")
-else:
+st.write("authentication_status:", authentication_status)
+
+if authentication_status is False:
     st.error("Username/password is incorrect")
     st.stop()
+elif authentication_status is None:
+    st.warning("Please enter your username and password")
+    st.stop()
+
+st.success("Login success! You now see the main app.")
+st.sidebar.write(f"Logged in as: **{name}** ({username})")
+st.write("Put your main app code here!")
