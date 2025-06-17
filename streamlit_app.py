@@ -13,8 +13,8 @@ authenticator = stauth.Authenticate(
     config['cookie']['expiry_days']
 )
 
-login_result = authenticator.login('Login')
-st.write("login_result:", login_result)  # Debug print
+login_result = authenticator.login('Login', location='main')
+st.write("login_result:", login_result)
 
 if login_result is None:
     st.write("login_result is None, stopping.")
