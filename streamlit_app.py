@@ -4,12 +4,14 @@ import yaml
 from yaml.loader import SafeLoader
 import os
 import pdfplumber
+import pandas as pd
+import matplotlib.pyplot as plt
+from datetime import datetime
 from pathlib import Path
 from pptx import Presentation
-import pandas as pd
 import openai
-from datetime import datetime
 
+# --- Load users from YAML ---
 with open('users.yaml') as file:
     config = yaml.load(file, Loader=SafeLoader)
 
@@ -20,20 +22,22 @@ authenticator = stauth.Authenticate(
     config['cookie']['expiry_days']
 )
 
+# --- LOGIN ---
 login_result = authenticator.login(location='main')
-
 if login_result is None:
     st.stop()
 
 if isinstance(login_result, tuple):
-    if len(login_result) == 3:
-        name, authentication_status, username = login_result
-    elif len(login_result) == 2:
+    if len(login_result) == 2:
         name, authentication_status = login_result
-        username = None
+        username = getattr(authenticator, "username", None)
+    elif len(login_result) == 3:
+        name, authentication_status, username = login_result
     else:
+        st.error("Unknown login return value structure.")
         st.stop()
 else:
+    st.error("Unexpected login return type.")
     st.stop()
 
 if authentication_status is False:
@@ -43,15 +47,10 @@ elif authentication_status is None:
     st.warning("Please enter your username and password")
     st.stop()
 
-# Define user_role for reporting
-user_role = config['credentials']['usernames'].get(username, {}).get("role", "student")
-
-# Show logout button
-authenticator.logout("Logout", "sidebar")
 st.sidebar.write(f"Logged in as: **{name}** ({username})")
-
-# ------ MAIN APP SECTION ------
 st.success("Login success! You now see the main app.")
+
+# --- Main App ---
 st.title("📚 PTA Tutor Chatbot with Quiz & Performance Tracker")
 
 course = st.selectbox("Select your course:", ["PTA_1010"])
@@ -104,9 +103,9 @@ if uploaded_pptx:
     pptx_text = extract_notes_from_uploaded_pptx(uploaded_pptx)
     st.sidebar.success("PowerPoint notes extracted. Chatbot will use these as course content.")
 
+# --- OpenAI setup (NO OpenAI object needed) ---
 openai_api_key = st.secrets["openai"]["api_key"]
 openai.api_key = openai_api_key
-client = OpenAI(api_key=openai_api_key)
 
 log_path = Path("grading_log.csv")
 if not log_path.exists():
@@ -153,11 +152,11 @@ If the question is unrelated to the material, respond: 'I'm sorry, I can only he
     }
 
     try:
-        response = client.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[system_prompt] + st.session_state.messages
         )
-        reply = response.choices[0].message.content
+        reply = response['choices'][0]['message']['content']
         with st.chat_message("assistant"):
             st.markdown(reply)
         st.session_state.messages.append({"role": "assistant", "content": reply})
@@ -222,11 +221,11 @@ if st.button("Generate Quiz"):
     )
 
     try:
-        response = client.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": quiz_prompt}]
         )
-        quiz_text = response.choices[0].message.content
+        quiz_text = response['choices'][0]['message']['content']
         st.markdown("### ✏️ Quiz Output")
         st.markdown(quiz_text)
 
@@ -263,6 +262,7 @@ with st.expander("📊 Show Performance Summary", expanded=False):
     try:
         df = pd.read_csv(log_path)
         # Only show the current user's results (unless admin)
+        user_role = config['credentials']['usernames'][username]['role']
         if user_role == "admin":
             user_df = df
         else:
@@ -274,7 +274,6 @@ with st.expander("📊 Show Performance Summary", expanded=False):
         st.write(f"✅ Correct: {correct_total}")
         st.write(f"❌ Incorrect: {incorrect_total}")
 
-        import matplotlib.pyplot as plt
         fig, ax = plt.subplots()
         ax.bar(["Correct", "Incorrect"], [correct_total, incorrect_total])
         ax.set_ylabel("Number of Responses")
