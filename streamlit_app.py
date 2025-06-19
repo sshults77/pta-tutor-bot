@@ -115,6 +115,14 @@ if not log_path.exists():
         "correct_answer", "correct", "timestamp", "topic", "blooms_level"
     ]).to_csv(log_path, index=False)
 
+# --- NEW: Resource map for recommendations (customize as needed) ---
+RESOURCE_MAP = {
+    # topic : (resource title, description, link or filename reference)
+    "goniometry": ("PTA_1010_PPTX_Slides 10-15", "Refer to slides 10-15 in Goniometry PowerPoint", "Goniometry.pptx"),
+    "modalities": ("PTA_1010_Handout", "See Modalities Handout, pages 2-3", "Modalities_handout.pdf"),
+    # add more mappings for your topics
+}
+
 def extract_question_metadata(quiz_output):
     question_blocks = re.split(r'\n\s*Question \d+:', quiz_output, flags=re.IGNORECASE)
     results = []
@@ -227,7 +235,6 @@ bloom_option = st.selectbox(
     ]
 )
 
-# Hold quiz in session state so answers can be collected
 if "quiz_questions" not in st.session_state:
     st.session_state.quiz_questions = []
 if "quiz_answers" not in st.session_state:
@@ -288,23 +295,65 @@ if st.button("Generate Quiz"):
         st.session_state.quiz_questions = extract_question_metadata(quiz_text)
         st.session_state.quiz_answers = [None] * len(st.session_state.quiz_questions)
         st.session_state.show_quiz = True
+        st.session_state.review_mode = False  # NEW: Track review mode
     except Exception as e:
         st.error(f"❌ Failed to generate quiz: {str(e)}")
         st.session_state.show_quiz = False
+
+# --- NEW: Button for "Review My Weak Areas" ---
+if st.button("Review My Weak Areas"):
+    df = pd.read_csv(log_path)
+    user_role = config['credentials']['usernames'][username]['role']
+    if user_role != "admin":
+        df = df[df["username"] == username]
+    # Get topics/Blooms missed 2+ times (customize threshold as needed)
+    weak_areas = df[df["correct"] == 0].groupby(["topic", "blooms_level"]).size().reset_index()
+    weak_areas = weak_areas[weak_areas[0] >= 1]
+    if weak_areas.empty:
+        st.info("You have no recorded weak areas. Try a standard quiz!")
+        st.session_state.show_quiz = False
+    else:
+        # Create focused prompt
+        quiz_focus = ""
+        for idx, row in weak_areas.iterrows():
+            topic = row["topic"]
+            bloom = row["blooms_level"]
+            quiz_focus += f"Include at least 1 question about '{topic}' at Bloom's Level {bloom}. "
+
+        review_prompt = (
+            f"Generate 5 NPTE-style multiple-choice questions focused on the following: {quiz_focus} "
+            "After each question, output a single line of JSON: "
+            '{"topic": "topic name", "blooms_level": "level number"}.'
+            "\nUse only the provided course material.\n\n"
+            + (pptx_text or txt_text or pdf_text)
+        )
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": review_prompt}]
+            )
+            quiz_text = response['choices'][0]['message']['content']
+            st.session_state.quiz_questions = extract_question_metadata(quiz_text)
+            st.session_state.quiz_answers = [None] * len(st.session_state.quiz_questions)
+            st.session_state.show_quiz = True
+            st.session_state.review_mode = True
+        except Exception as e:
+            st.error(f"❌ Failed to generate review quiz: {str(e)}")
+            st.session_state.show_quiz = False
 
 # --- Display and collect answers if quiz is available ---
 if st.session_state.get("show_quiz", False):
     st.subheader("Answer the following questions:")
     for idx, q in enumerate(st.session_state.quiz_questions):
         st.write(f"**Question {idx+1}:** {q['question_text']}")
-        for opt, text in q['options']:
-            key = f"q{idx}_opt_{opt}"
-            selected = st.radio(
-                f"Select answer for Question {idx+1}:", 
-                [o[0] for o in q["options"]], 
-                key=f"radio_{idx}", 
-                index=-1 if st.session_state.quiz_answers[idx] is None else "ABCD".index(st.session_state.quiz_answers[idx])
-            )
+        options = [opt for opt, _ in q["options"]]
+        # Present radio for each question
+        selected = st.radio(
+            f"Select answer for Question {idx+1}:", 
+            options,
+            key=f"radio_{idx}", 
+            index=-1 if st.session_state.quiz_answers[idx] is None else options.index(st.session_state.quiz_answers[idx])
+        )
         st.session_state.quiz_answers[idx] = selected
 
     if st.button("Submit Answers"):
@@ -337,14 +386,26 @@ if st.session_state.get("show_quiz", False):
         df = pd.concat([df, pd.DataFrame(log_entries)], ignore_index=True)
         df.to_csv(log_path, index=False)
 
-        # Identify weaknesses and provide feedback
+        # --- NEW: Enhanced adaptive feedback & recommendations ---
         feedback.append("### 📋 Targeted Study Suggestions")
         for (topic, bloom), perf in topic_perf.items():
             if perf["wrong"] > 0:
-                feedback.append(
+                res_title, res_desc, res_link = RESOURCE_MAP.get(topic.lower(), ("", "", ""))
+                suggestion = (
                     f"- **{topic}** at Bloom's Level {bloom}: {perf['wrong']} out of {perf['total']} incorrect. "
-                    f"Consider reviewing this topic/concept at this level."
+                    f"Review this area."
                 )
+                if res_title:
+                    suggestion += f" **Recommended resource:** {res_title} – {res_desc}"
+                feedback.append(suggestion)
+
+        # NEW: Motivation if improved (based on history)
+        df_user = df[df["username"] == username]
+        for (topic, bloom), perf in topic_perf.items():
+            prev_wrong = df_user[(df_user["topic"] == topic) & (df_user["blooms_level"] == bloom) & (df_user["correct"] == 0)].shape[0]
+            if perf["wrong"] == 0 and prev_wrong > 0:
+                feedback.append(f"🎉 **Improvement noticed in {topic} at Bloom's Level {bloom}! Keep it up!**")
+
         if len(feedback) == 1:
             feedback.append("Great job! No weak areas detected.")
         st.markdown("\n".join(feedback))
