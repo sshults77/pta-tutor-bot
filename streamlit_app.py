@@ -10,6 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from pptx import Presentation
 import openai
+import re
+import json
 
 # --- Load users from YAML ---
 with open('users.yaml') as file:
@@ -22,7 +24,6 @@ authenticator = stauth.Authenticate(
     config['cookie']['expiry_days']
 )
 
-# --- LOGIN ---
 login_result = authenticator.login(location='main')
 if login_result is None:
     st.stop()
@@ -163,6 +164,62 @@ If the question is unrelated to the material, respond: 'I'm sorry, I can only he
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
 
+
+# ---------- NEW: QUIZ PARSER ----------------
+def extract_question_metadata(quiz_output):
+    """
+    Extracts question blocks, answers, and their associated JSON metadata
+    from GPT output.
+    Returns a list of dicts: [{
+        "question_text": ...,
+        "options": ...,
+        "correct_answer": ...,
+        "topic": ...,
+        "blooms_level": ...
+    }, ...]
+    """
+    question_blocks = re.split(r'\n\s*Question \d+:', quiz_output, flags=re.IGNORECASE)
+    results = []
+
+    for block in question_blocks:
+        block = block.strip()
+        if not block:
+            continue
+
+        json_match = re.search(r'\{.*\}', block)
+        topic = blooms_level = None
+        if json_match:
+            try:
+                meta = json.loads(json_match.group())
+                topic = meta.get("topic")
+                blooms_level = meta.get("blooms_level")
+            except Exception:
+                pass
+
+        correct = None
+        corr_match = re.search(r'Correct Answer: ([A-D])', block)
+        if corr_match:
+            correct = corr_match.group(1)
+
+        qtext_match = re.match(r'([^\n]+)\n', block)
+        question_text = qtext_match.group(1).strip() if qtext_match else "Unknown"
+
+        options = []
+        for opt in "ABCD":
+            m = re.search(rf"{opt}\.\s*(.+)", block)
+            if m:
+                options.append(f"{opt}. {m.group(1).strip()}")
+
+        results.append({
+            "question_text": question_text,
+            "options": options,
+            "correct_answer": correct,
+            "topic": topic,
+            "blooms_level": blooms_level
+        })
+
+    return results
+
 # --- Quiz Generator with Blooms Levels 1–5 ---
 st.header("📝 Quiz Generator")
 
@@ -194,31 +251,33 @@ if st.button("Generate Quiz"):
         "5": "Synthesis/Evaluation"
     }
 
+    # --- INSTRUCT GPT TO INCLUDE JSON METADATA! ---
     if bloom_option.startswith("Mixed"):
         blooms_instruction = (
             "Generate 5 NPTE-style multiple-choice questions: "
             "one each at Bloom's Level 1 (Recall/Knowledge), "
             "Level 2 (Comprehension), Level 3 (Application), "
             "Level 4 (Analysis), and Level 5 (Synthesis/Evaluation). "
+            "After each question, include a JSON object on its own line in the format: "
+            '{"topic": "...", "blooms_level": "..."}'
         )
     else:
         level = bloom_option[0]
         level_name = blooms_level_map.get(level, "")
         blooms_instruction = (
             f"Generate 5 NPTE-style multiple-choice questions at Bloom's Level {level} ({level_name}). "
+            "After each question, include a JSON object on its own line in the format: "
+            '{"topic": "...", "blooms_level": "..."}'
         )
 
-    # Ask for topic tagging in prompt!
     quiz_prompt = (
         f"You are a Physical Therapist Assistant tutor. Based on the following course content, "
-        f"{blooms_instruction}"
-        "For each question:\n"
-        "1) State the Topic and Bloom's Taxonomy level,\n"
-        "2) Present the question in official NPTE exam style,\n"
-        "3) Provide 4 answer options (A-D),\n"
-        "4) List the correct answer after each question,\n"
-        "5) Output the following JSON after each question for logging: "
-        "{'topic': <topic>, 'blooms_level': <blooms_level>}\n"
+        f"{blooms_instruction} "
+        "For each question: "
+        "1) State the Bloom's Taxonomy level, "
+        "2) Present the question in official NPTE exam style, "
+        "3) Provide 4 answer options (A-D), "
+        "4) List the correct answer after each question. "
         "Use only the provided material.\n\n"
         + course_content
     )
@@ -232,41 +291,28 @@ if st.button("Generate Quiz"):
         st.markdown("### ✏️ Quiz Output")
         st.markdown(quiz_text)
 
-        # ---- LOGGING (SIMULATED, replace this with real data in production) ----
-        # Simulated log entries with topic and bloom's level for demo purposes:
-        sample_log = [
-            {
-                "username": username,  
-                "question_id": "Q001",
-                "question_text": "What is the primary muscle responsible for knee extension?",
-                "user_answer": "A",
-                "correct_answer": "A",
-                "correct": 1,
-                "timestamp": datetime.now().isoformat(),
-                "topic": "Knee Anatomy",
-                "blooms_level": "1"
-            },
-            {
+        # --- Parse questions and log metadata ---
+        parsed_questions = extract_question_metadata(quiz_text)
+        log_entries = []
+        for idx, q in enumerate(parsed_questions):
+            log_entries.append({
                 "username": username,
-                "question_id": "Q002",
-                "question_text": "Which is a contraindication to ultrasound?",
-                "user_answer": "C",
-                "correct_answer": "A",
-                "correct": 0,
+                "question_id": f"Q{str(idx+1).zfill(3)}",
+                "question_text": q["question_text"],
+                "user_answer": "",  # You can update this if you collect answers!
+                "correct_answer": q["correct_answer"],
+                "correct": None,
                 "timestamp": datetime.now().isoformat(),
-                "topic": "Modalities",
-                "blooms_level": "3"
-            }
-        ]
-
+                "topic": q["topic"] or "",
+                "blooms_level": q["blooms_level"] or ""
+            })
         df = pd.read_csv(log_path)
-        df = pd.concat([df, pd.DataFrame(sample_log)], ignore_index=True)
+        df = pd.concat([df, pd.DataFrame(log_entries)], ignore_index=True)
         df.to_csv(log_path, index=False)
 
     except Exception as e:
         st.error(f"❌ Failed to generate quiz: {str(e)}")
 
-# --- Performance Summary, Weak Area Detection, Study Suggestions ---
 with st.expander("📊 Show Performance Summary", expanded=False):
     try:
         df = pd.read_csv(log_path)
@@ -282,63 +328,11 @@ with st.expander("📊 Show Performance Summary", expanded=False):
         st.write(f"✅ Correct: {correct_total}")
         st.write(f"❌ Incorrect: {incorrect_total}")
 
-        # --- Topic mastery breakdown
-        st.write("### Topic Performance")
-        weak_topics = []
-        if not user_df.empty and "topic" in user_df.columns:
-            topic_stats = user_df.groupby("topic")["correct"].agg(["sum", "count"])
-            topic_stats["Accuracy (%)"] = 100 * topic_stats["sum"] / topic_stats["count"]
-            st.dataframe(topic_stats[["sum", "count", "Accuracy (%)"]])
-
-            for topic, row in topic_stats.iterrows():
-                if row["Accuracy (%)"] < 70:
-                    weak_topics.append(topic)
-
-        # --- Bloom's level breakdown
-        st.write("### Bloom's Level Performance")
-        weak_blooms = []
-        if not user_df.empty and "blooms_level" in user_df.columns:
-            blooms_stats = user_df.groupby("blooms_level")["correct"].agg(["sum", "count"])
-            blooms_stats["Accuracy (%)"] = 100 * blooms_stats["sum"] / blooms_stats["count"]
-            st.dataframe(blooms_stats[["sum", "count", "Accuracy (%)"]])
-
-            for level, row in blooms_stats.iterrows():
-                if row["Accuracy (%)"] < 70:
-                    weak_blooms.append(level)
-
-        # --- Visual Summary ---
         fig, ax = plt.subplots()
         ax.bar(["Correct", "Incorrect"], [correct_total, incorrect_total])
         ax.set_ylabel("Number of Responses")
         ax.set_title("Student Performance")
         st.pyplot(fig)
-
-        # --- Weak Areas and Suggestions ---
-        st.write("### 📉 Areas for Improvement")
-        if not weak_topics and not weak_blooms:
-            st.success("No weak areas detected. Great job! 🎉")
-        else:
-            if weak_topics:
-                st.error(f"Topics to Review: {', '.join(weak_topics)}")
-            if weak_blooms:
-                st.warning(f"Challenging Bloom's Levels: {', '.join(weak_blooms)}")
-
-            st.write("#### 📚 Study Suggestions")
-            if weak_topics:
-                for topic in weak_topics:
-                    st.write(f"- **{topic}:** Review your notes and course materials for this topic. Try re-answering practice questions or discuss with a study group.")
-            if weak_blooms:
-                for level in weak_blooms:
-                    if str(level).startswith("1"):
-                        st.write("- **Level 1 (Recall):** Focus on memorizing key facts and definitions. Use flashcards for repetitive review.")
-                    elif str(level).startswith("2"):
-                        st.write("- **Level 2 (Comprehension):** Practice explaining concepts in your own words or teaching someone else.")
-                    elif str(level).startswith("3"):
-                        st.write("- **Level 3 (Application):** Work through practice problems that require you to use concepts in scenarios.")
-                    elif str(level).startswith("4"):
-                        st.write("- **Level 4 (Analysis):** Break down case studies and identify relationships between concepts.")
-                    elif str(level).startswith("5"):
-                        st.write("- **Level 5 (Synthesis/Evaluation):** Practice critiquing and creating solutions to complex scenarios.")
 
     except Exception as e:
         st.warning("⚠️ No grading data available or error reading log.")
