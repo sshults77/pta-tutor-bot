@@ -144,7 +144,9 @@ if prompt := st.chat_input("Ask a question about your course..."):
         "role": "system",
         "content": f"""You are a knowledgeable and focused PTA tutor.
 
-Use ONLY this course content to answer questions:
+Use ONLY this course content to answer questions.
+
+Do NOT reference slide numbers or slide locations in any answers or questions. Only focus on the content itself, not where it appears in the slides or documents.
 
 {course_content}
 
@@ -152,12 +154,11 @@ If the question is unrelated to the material, respond: 'I'm sorry, I can only he
     }
 
     try:
-        # --- UPDATED FOR OPENAI >=1.0.0 ---
-        response = openai.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[system_prompt] + st.session_state.messages
         )
-        reply = response.choices[0].message.content
+        reply = response['choices'][0]['message']['content']
         with st.chat_message("assistant"):
             st.markdown(reply)
         st.session_state.messages.append({"role": "assistant", "content": reply})
@@ -212,6 +213,7 @@ if st.button("Generate Quiz"):
     quiz_prompt = (
         f"You are a Physical Therapist Assistant tutor. Based on the following course content, "
         f"{blooms_instruction}"
+        "Do NOT reference slide numbers or slide locations in any questions. Focus only on content."
         "For each question: "
         "1) State the Bloom's Taxonomy level, "
         "2) Present the question in official NPTE exam style, "
@@ -222,12 +224,11 @@ if st.button("Generate Quiz"):
     )
 
     try:
-        # --- UPDATED FOR OPENAI >=1.0.0 ---
-        response = openai.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": quiz_prompt}]
         )
-        quiz_text = response.choices[0].message.content
+        quiz_text = response['choices'][0]['message']['content']
         st.markdown("### ✏️ Quiz Output")
         st.markdown(quiz_text)
 
