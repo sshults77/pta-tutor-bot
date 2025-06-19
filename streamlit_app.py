@@ -154,11 +154,11 @@ If the question is unrelated to the material, respond: 'I'm sorry, I can only he
     }
 
     try:
-        response = openai.ChatCompletion.create(
+        response = openai.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[system_prompt] + st.session_state.messages
         )
-        reply = response['choices'][0]['message']['content']
+        reply = response.choices[0].message.content
         with st.chat_message("assistant"):
             st.markdown(reply)
         st.session_state.messages.append({"role": "assistant", "content": reply})
@@ -224,11 +224,11 @@ if st.button("Generate Quiz"):
     )
 
     try:
-        response = openai.ChatCompletion.create(
+        response = openai.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": quiz_prompt}]
         )
-        quiz_text = response['choices'][0]['message']['content']
+        quiz_text = response.choices[0].message.content
         st.markdown("### ✏️ Quiz Output")
         st.markdown(quiz_text)
 
