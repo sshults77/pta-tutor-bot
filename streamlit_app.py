@@ -104,7 +104,7 @@ if uploaded_pptx:
     pptx_text = extract_notes_from_uploaded_pptx(uploaded_pptx)
     st.sidebar.success("PowerPoint notes extracted. Chatbot will use these as course content.")
 
-# --- OpenAI setup (NO OpenAI object needed) ---
+# --- OpenAI setup ---
 openai_api_key = st.secrets["openai"]["api_key"]
 openai.api_key = openai_api_key
 
@@ -115,6 +115,54 @@ if not log_path.exists():
         "correct_answer", "correct", "timestamp", "topic", "blooms_level"
     ]).to_csv(log_path, index=False)
 
+def extract_question_metadata(quiz_output):
+    question_blocks = re.split(r'\n\s*Question \d+:', quiz_output, flags=re.IGNORECASE)
+    results = []
+
+    for block in question_blocks:
+        block = block.strip()
+        if not block:
+            continue
+
+        # Find JSON line
+        json_match = re.search(r'\{.*\}', block)
+        topic = blooms_level = None
+        if json_match:
+            try:
+                meta = json.loads(json_match.group())
+                topic = meta.get("topic")
+                blooms_level = meta.get("blooms_level")
+            except Exception:
+                pass
+
+        # Extract correct answer
+        correct = None
+        corr_match = re.search(r'Correct Answer: ([A-D])', block)
+        if corr_match:
+            correct = corr_match.group(1)
+
+        # Extract question text (before options)
+        qtext_match = re.match(r'([^\n]+)\n', block)
+        question_text = qtext_match.group(1).strip() if qtext_match else "Unknown"
+
+        # Extract options (simple version)
+        options = []
+        for opt in "ABCD":
+            m = re.search(rf"{opt}\.\s*(.+)", block)
+            if m:
+                options.append((opt, m.group(1).strip()))
+
+        results.append({
+            "question_text": question_text,
+            "options": options,
+            "correct_answer": correct,
+            "topic": topic,
+            "blooms_level": blooms_level
+        })
+
+    return results
+
+# --- Chatbot Section (same as before) ---
 st.header("💬 Chat with the Tutor")
 
 if "messages" not in st.session_state:
@@ -164,63 +212,7 @@ If the question is unrelated to the material, respond: 'I'm sorry, I can only he
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
 
-
-# ---------- NEW: QUIZ PARSER ----------------
-def extract_question_metadata(quiz_output):
-    """
-    Extracts question blocks, answers, and their associated JSON metadata
-    from GPT output.
-    Returns a list of dicts: [{
-        "question_text": ...,
-        "options": ...,
-        "correct_answer": ...,
-        "topic": ...,
-        "blooms_level": ...
-    }, ...]
-    """
-    question_blocks = re.split(r'\n\s*Question \d+:', quiz_output, flags=re.IGNORECASE)
-    results = []
-
-    for block in question_blocks:
-        block = block.strip()
-        if not block:
-            continue
-
-        json_match = re.search(r'\{.*\}', block)
-        topic = blooms_level = None
-        if json_match:
-            try:
-                meta = json.loads(json_match.group())
-                topic = meta.get("topic")
-                blooms_level = meta.get("blooms_level")
-            except Exception:
-                pass
-
-        correct = None
-        corr_match = re.search(r'Correct Answer: ([A-D])', block)
-        if corr_match:
-            correct = corr_match.group(1)
-
-        qtext_match = re.match(r'([^\n]+)\n', block)
-        question_text = qtext_match.group(1).strip() if qtext_match else "Unknown"
-
-        options = []
-        for opt in "ABCD":
-            m = re.search(rf"{opt}\.\s*(.+)", block)
-            if m:
-                options.append(f"{opt}. {m.group(1).strip()}")
-
-        results.append({
-            "question_text": question_text,
-            "options": options,
-            "correct_answer": correct,
-            "topic": topic,
-            "blooms_level": blooms_level
-        })
-
-    return results
-
-# --- Quiz Generator with Blooms Levels 1–5 ---
+# --- Quiz Generator with Student Answers ---
 st.header("📝 Quiz Generator")
 
 bloom_option = st.selectbox(
@@ -234,6 +226,12 @@ bloom_option = st.selectbox(
         "Mixed (Levels 1–5)"
     ]
 )
+
+# Hold quiz in session state so answers can be collected
+if "quiz_questions" not in st.session_state:
+    st.session_state.quiz_questions = []
+if "quiz_answers" not in st.session_state:
+    st.session_state.quiz_answers = []
 
 if st.button("Generate Quiz"):
     if pptx_text:
@@ -251,28 +249,27 @@ if st.button("Generate Quiz"):
         "5": "Synthesis/Evaluation"
     }
 
-    # --- INSTRUCT GPT TO INCLUDE JSON METADATA! ---
     if bloom_option.startswith("Mixed"):
         blooms_instruction = (
             "Generate 5 NPTE-style multiple-choice questions: "
             "one each at Bloom's Level 1 (Recall/Knowledge), "
             "Level 2 (Comprehension), Level 3 (Application), "
             "Level 4 (Analysis), and Level 5 (Synthesis/Evaluation). "
-            "After each question, include a JSON object on its own line in the format: "
-            '{"topic": "...", "blooms_level": "..."}'
+            "After each question, output a single line of JSON: "
+            '{"topic": "topic name", "blooms_level": "level number"}.'
         )
     else:
         level = bloom_option[0]
         level_name = blooms_level_map.get(level, "")
         blooms_instruction = (
             f"Generate 5 NPTE-style multiple-choice questions at Bloom's Level {level} ({level_name}). "
-            "After each question, include a JSON object on its own line in the format: "
-            '{"topic": "...", "blooms_level": "..."}'
+            'After each question, output a single line of JSON: '
+            '{"topic": "topic name", "blooms_level": "level number"}.'
         )
 
     quiz_prompt = (
         f"You are a Physical Therapist Assistant tutor. Based on the following course content, "
-        f"{blooms_instruction} "
+        f"{blooms_instruction}"
         "For each question: "
         "1) State the Bloom's Taxonomy level, "
         "2) Present the question in official NPTE exam style, "
@@ -288,34 +285,76 @@ if st.button("Generate Quiz"):
             messages=[{"role": "user", "content": quiz_prompt}]
         )
         quiz_text = response['choices'][0]['message']['content']
-        st.markdown("### ✏️ Quiz Output")
-        st.markdown(quiz_text)
+        st.session_state.quiz_questions = extract_question_metadata(quiz_text)
+        st.session_state.quiz_answers = [None] * len(st.session_state.quiz_questions)
+        st.session_state.show_quiz = True
+    except Exception as e:
+        st.error(f"❌ Failed to generate quiz: {str(e)}")
+        st.session_state.show_quiz = False
 
-        # --- Parse questions and log metadata ---
-        parsed_questions = extract_question_metadata(quiz_text)
+# --- Display and collect answers if quiz is available ---
+if st.session_state.get("show_quiz", False):
+    st.subheader("Answer the following questions:")
+    for idx, q in enumerate(st.session_state.quiz_questions):
+        st.write(f"**Question {idx+1}:** {q['question_text']}")
+        for opt, text in q['options']:
+            key = f"q{idx}_opt_{opt}"
+            selected = st.radio(
+                f"Select answer for Question {idx+1}:", 
+                [o[0] for o in q["options"]], 
+                key=f"radio_{idx}", 
+                index=-1 if st.session_state.quiz_answers[idx] is None else "ABCD".index(st.session_state.quiz_answers[idx])
+            )
+        st.session_state.quiz_answers[idx] = selected
+
+    if st.button("Submit Answers"):
+        feedback = []
         log_entries = []
-        for idx, q in enumerate(parsed_questions):
+        topic_perf = {}
+        for idx, (q, user_ans) in enumerate(zip(st.session_state.quiz_questions, st.session_state.quiz_answers)):
+            is_correct = user_ans == q['correct_answer']
             log_entries.append({
                 "username": username,
                 "question_id": f"Q{str(idx+1).zfill(3)}",
                 "question_text": q["question_text"],
-                "user_answer": "",  # You can update this if you collect answers!
+                "user_answer": user_ans,
                 "correct_answer": q["correct_answer"],
-                "correct": None,
+                "correct": int(is_correct),
                 "timestamp": datetime.now().isoformat(),
                 "topic": q["topic"] or "",
                 "blooms_level": q["blooms_level"] or ""
             })
+            # Track performance by topic/Bloom
+            key = (q["topic"] or "Unknown", q["blooms_level"] or "Unknown")
+            if key not in topic_perf:
+                topic_perf[key] = {"total": 0, "wrong": 0}
+            topic_perf[key]["total"] += 1
+            if not is_correct:
+                topic_perf[key]["wrong"] += 1
+
+        # Save to log
         df = pd.read_csv(log_path)
         df = pd.concat([df, pd.DataFrame(log_entries)], ignore_index=True)
         df.to_csv(log_path, index=False)
 
-    except Exception as e:
-        st.error(f"❌ Failed to generate quiz: {str(e)}")
+        # Identify weaknesses and provide feedback
+        feedback.append("### 📋 Targeted Study Suggestions")
+        for (topic, bloom), perf in topic_perf.items():
+            if perf["wrong"] > 0:
+                feedback.append(
+                    f"- **{topic}** at Bloom's Level {bloom}: {perf['wrong']} out of {perf['total']} incorrect. "
+                    f"Consider reviewing this topic/concept at this level."
+                )
+        if len(feedback) == 1:
+            feedback.append("Great job! No weak areas detected.")
+        st.markdown("\n".join(feedback))
+
+        st.session_state.show_quiz = False  # Hide quiz after submission
 
 with st.expander("📊 Show Performance Summary", expanded=False):
     try:
         df = pd.read_csv(log_path)
+        # Only show the current user's results (unless admin)
         user_role = config['credentials']['usernames'][username]['role']
         if user_role == "admin":
             user_df = df
@@ -327,6 +366,11 @@ with st.expander("📊 Show Performance Summary", expanded=False):
         st.write(f"Total Questions Answered: {len(user_df)}")
         st.write(f"✅ Correct: {correct_total}")
         st.write(f"❌ Incorrect: {incorrect_total}")
+
+        if not user_df.empty:
+            mastery = user_df.groupby(["topic", "blooms_level"])["correct"].agg(['sum', 'count'])
+            st.write("Mastery by topic and Bloom's level:")
+            st.dataframe(mastery)
 
         fig, ax = plt.subplots()
         ax.bar(["Correct", "Incorrect"], [correct_total, incorrect_total])
