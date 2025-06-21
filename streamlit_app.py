@@ -103,7 +103,7 @@ if uploaded_pptx:
     pptx_text = extract_notes_from_uploaded_pptx(uploaded_pptx)
     st.sidebar.success("PowerPoint notes extracted. Chatbot will use these as course content.")
 
-# --- OpenAI setup (NO OpenAI object needed) ---
+# --- OpenAI setup ---
 openai_api_key = st.secrets["openai"]["api_key"]
 openai.api_key = openai_api_key
 
@@ -114,6 +114,82 @@ if not log_path.exists():
         "correct_answer", "correct", "timestamp"
     ]).to_csv(log_path, index=False)
 
+# --- Interactive Flashcards Section ---
+st.header("🃏 Interactive Flashcards (Beta)")
+
+# Choose course content source
+if pptx_text:
+    flashcard_content = pptx_text
+    content_source = "PowerPoint notes"
+elif txt_text:
+    flashcard_content = txt_text
+    content_source = "Text file"
+else:
+    flashcard_content = pdf_text
+    content_source = "PDF"
+
+st.info(f"Flashcards are based on: {content_source}")
+
+# Generate flashcards only once per session
+if "flashcards" not in st.session_state:
+    try:
+        flash_prompt = (
+            "Create 10 simple Q&A flashcards as a Python list of dictionaries, "
+            "based on this PTA course material. Each flashcard should be like this: "
+            '{"question": "...", "answer": "..."}. Keep each question and answer short and avoid references to slide numbers or locations. '
+            "Return ONLY the list, no extra commentary.\n\n"
+            + flashcard_content
+        )
+        resp = openai.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": flash_prompt}]
+        )
+        # Attempt to safely eval/parse the flashcard list from GPT output
+        import ast
+        flashcards = ast.literal_eval(resp.choices[0].message.content.strip())
+        st.session_state.flashcards = flashcards
+        st.session_state.flashcard_index = 0
+        st.session_state.marked_flashcards = set()
+    except Exception as e:
+        st.error("Flashcards could not be generated. Try again later or check your course material.")
+        st.session_state.flashcards = []
+        st.session_state.flashcard_index = 0
+        st.session_state.marked_flashcards = set()
+
+flashcards = st.session_state.flashcards
+idx = st.session_state.flashcard_index if "flashcard_index" in st.session_state else 0
+
+if flashcards:
+    card = flashcards[idx]
+    st.subheader(f"Card {idx+1} of {len(flashcards)}")
+    st.markdown(f"**Q:** {card['question']}")
+    if st.button("Show Answer", key=f"show_{idx}"):
+        st.info(f"**A:** {card['answer']}")
+    col1, col2, col3 = st.columns([1,1,2])
+    with col1:
+        if st.button("⏪ Previous", disabled=(idx==0)):
+            st.session_state.flashcard_index = max(0, idx-1)
+            st.experimental_rerun()
+    with col2:
+        if st.button("Next ⏩", disabled=(idx==len(flashcards)-1)):
+            st.session_state.flashcard_index = min(len(flashcards)-1, idx+1)
+            st.experimental_rerun()
+    with col3:
+        if idx in st.session_state.marked_flashcards:
+            if st.button("Unmark for Review", key=f"unmark_{idx}"):
+                st.session_state.marked_flashcards.remove(idx)
+                st.success("Unmarked for review!")
+        else:
+            if st.button("Mark for Review", key=f"mark_{idx}"):
+                st.session_state.marked_flashcards.add(idx)
+                st.info("Marked for review!")
+
+    if st.session_state.marked_flashcards:
+        st.warning(f"You have {len(st.session_state.marked_flashcards)} card(s) marked for review.")
+else:
+    st.info("No flashcards available yet.")
+
+# --- Chatbot Section ---
 st.header("💬 Chat with the Tutor")
 
 if "messages" not in st.session_state:
