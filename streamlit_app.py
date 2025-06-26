@@ -10,7 +10,6 @@ from datetime import datetime
 from pathlib import Path
 from pptx import Presentation
 import openai
-import json
 
 # --- Load users from YAML ---
 with open('users.yaml') as file:
@@ -54,8 +53,15 @@ st.success("Login success! You now see the main app.")
 # --- Main App ---
 st.title("📚 PTA Tutor Chatbot with Quiz & Performance Tracker")
 
-course = st.selectbox("Select your course:", ["PTA_1010"])
-course_folder = f"course_materials/{course}"
+# --- Dynamic Course List ---
+COURSE_MATERIALS_DIR = "course_materials"
+courses_list = sorted([d for d in os.listdir(COURSE_MATERIALS_DIR) if os.path.isdir(os.path.join(COURSE_MATERIALS_DIR, d))])
+if not courses_list:
+    st.error("No courses found in course_materials/. Please add at least one course folder.")
+    st.stop()
+
+course = st.selectbox("Select your course:", courses_list)
+course_folder = os.path.join(COURSE_MATERIALS_DIR, course)
 
 def load_pdf_text(folder):
     text = ""
@@ -104,7 +110,7 @@ if uploaded_pptx:
     pptx_text = extract_notes_from_uploaded_pptx(uploaded_pptx)
     st.sidebar.success("PowerPoint notes extracted. Chatbot will use these as course content.")
 
-# --- OpenAI setup ---
+# --- OpenAI setup (NO OpenAI object needed) ---
 openai_api_key = st.secrets["openai"]["api_key"]
 openai.api_key = openai_api_key
 
@@ -112,7 +118,7 @@ log_path = Path("grading_log.csv")
 if not log_path.exists():
     pd.DataFrame(columns=[
         "username", "question_id", "question_text", "user_answer",
-        "correct_answer", "correct", "topic", "bloom_level", "timestamp"
+        "correct_answer", "correct", "timestamp"
     ]).to_csv(log_path, index=False)
 
 st.header("💬 Chat with the Tutor")
@@ -166,7 +172,7 @@ If the question is unrelated to the material, respond: 'I'm sorry, I can only he
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
 
-# --- Quiz Generator with Blooms Levels 1–5 and JSON output ---
+# --- Quiz Generator with Blooms Levels 1–5 ---
 st.header("📝 Quiz Generator")
 
 bloom_option = st.selectbox(
@@ -214,85 +220,53 @@ if st.button("Generate Quiz"):
     quiz_prompt = (
         f"You are a Physical Therapist Assistant tutor. Based on the following course content, "
         f"{blooms_instruction}"
-        "For each question, provide: "
-        "- The Bloom's Taxonomy level\n"
-        "- The topic (based on content)\n"
-        "- The question in NPTE exam style\n"
-        "- 4 answer options (A-D)\n"
-        "- The correct answer letter\n"
-        "Respond with a JSON array of questions in the following format:\n"
-        "[\n"
-        "  {\n"
-        "    'bloom_level': '1',\n"
-        "    'topic': 'Hip Muscles',\n"
-        "    'question': 'Which muscle is the primary hip flexor?',\n"
-        "    'choices': {'A': 'Iliopsoas', 'B': 'Gluteus Maximus', ...},\n"
-        "    'correct_answer': 'A'\n"
-        "  }, ...\n"
-        "]\n"
-        "Do NOT reference slide numbers or slide locations in any questions. Focus only on content.\n\n"
+        "Do NOT reference slide numbers or slide locations in any questions. Focus only on content."
+        "For each question: "
+        "1) State the Bloom's Taxonomy level, "
+        "2) Present the question in official NPTE exam style, "
+        "3) Provide 4 answer options (A-D), "
+        "4) List the correct answer after each question. "
+        "Use only the provided material.\n\n"
         + course_content
     )
 
     try:
-        # Request quiz as structured JSON
         response = openai.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": quiz_prompt}],
-            temperature=0.3
+            messages=[{"role": "user", "content": quiz_prompt}]
         )
-        response_content = response.choices[0].message.content
+        quiz_text = response.choices[0].message.content
+        st.markdown("### ✏️ Quiz Output")
+        st.markdown(quiz_text)
 
-        # Remove code block formatting if present
-        response_content = response_content.strip("```json").strip("```").strip()
-
-        # Parse GPT's response as JSON
-        quiz_questions = json.loads(response_content.replace("'", '"'))
-
-        # Show questions and get student answers
-        user_answers = []
-        for i, q in enumerate(quiz_questions):
-            st.markdown(f"**Q{i+1} [{q['topic']} | Bloom's {q['bloom_level']}]**: {q['question']}")
-            choices = q['choices']
-            answer = st.radio(
-                f"Choose your answer for Q{i+1}:", 
-                list(choices.keys()), 
-                key=f"quiz_{i}"
-            )
-            user_answers.append({
-                "username": username,
-                "question_id": f"Q{str(i+1).zfill(3)}",
-                "question_text": q['question'],
-                "user_answer": answer,
-                "correct_answer": q['correct_answer'],
-                "correct": int(answer == q['correct_answer']),
-                "topic": q['topic'],
-                "bloom_level": q['bloom_level'],
+        # Simulated grading
+        sample_log = [
+            {
+                "username": username,  # Log the user
+                "question_id": "Q001",
+                "question_text": "What is the primary muscle responsible for knee extension?",
+                "user_answer": "A",
+                "correct_answer": "A",
+                "correct": 1,
                 "timestamp": datetime.now().isoformat()
-            })
+            },
+            {
+                "username": username,
+                "question_id": "Q002",
+                "question_text": "Which is a contraindication to ultrasound?",
+                "user_answer": "C",
+                "correct_answer": "A",
+                "correct": 0,
+                "timestamp": datetime.now().isoformat()
+            }
+        ]
 
-        # Save to grading log
         df = pd.read_csv(log_path)
-        df = pd.concat([df, pd.DataFrame(user_answers)], ignore_index=True)
+        df = pd.concat([df, pd.DataFrame(sample_log)], ignore_index=True)
         df.to_csv(log_path, index=False)
 
-        # Identify weak areas
-        missed = [ua for ua in user_answers if not ua['correct']]
-        missed_topics = [m['topic'] for m in missed]
-        missed_levels = [m['bloom_level'] for m in missed]
-        suggestions = ""
-        if missed:
-            topics = ", ".join(sorted(set(missed_topics)))
-            levels = ", ".join(sorted(set(missed_levels)))
-            suggestions = f"**Study Suggestions:**\n- Review these topics: {topics}\n- Practice more questions at Bloom's level(s): {levels}"
-        else:
-            suggestions = "Great job! You answered all questions correctly. Keep up the good work!"
-
-        st.markdown("### 📊 Personalized Recommendations")
-        st.markdown(suggestions)
-
     except Exception as e:
-        st.error(f"❌ Failed to generate quiz or process results: {str(e)}")
+        st.error(f"❌ Failed to generate quiz: {str(e)}")
 
 with st.expander("📊 Show Performance Summary", expanded=False):
     try:
@@ -315,6 +289,10 @@ with st.expander("📊 Show Performance Summary", expanded=False):
         ax.set_ylabel("Number of Responses")
         ax.set_title("Student Performance")
         st.pyplot(fig)
+
+    except Exception as e:
+        st.warning("⚠️ No grading data available or error reading log.")
+        st.text(str(e))
 
     except Exception as e:
         st.warning("⚠️ No grading data available or error reading log.")
