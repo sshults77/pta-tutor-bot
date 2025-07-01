@@ -293,7 +293,3 @@ with st.expander("📊 Show Performance Summary", expanded=False):
     except Exception as e:
         st.warning("⚠️ No grading data available or error reading log.")
         st.text(str(e))
-
-    except Exception as e:
-        st.warning("⚠️ No grading data available or error reading log.")
-        st.text(str(e))
