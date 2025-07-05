@@ -10,7 +10,6 @@ from datetime import datetime
 from pathlib import Path
 from pptx import Presentation
 import openai
-import json
 
 # --- Load users from YAML ---
 with open('users.yaml') as file:
@@ -48,23 +47,24 @@ elif authentication_status is None:
     st.warning("Please enter your username and password")
     st.stop()
 
+# Get user role for instructor dashboard
 user_role = config['credentials']['usernames'][username]['role']
+
 st.sidebar.write(f"Logged in as: **{name}** ({username})")
 st.success("Login success! You now see the main app.")
 
 # --- Main App ---
 st.title("📚 PTA Tutor Chatbot with Quiz & Performance Tracker")
 
-# ---- Course selection ----
-base_course_dir = "course_materials"
-courses = [
-    d for d in os.listdir(base_course_dir)
-    if os.path.isdir(os.path.join(base_course_dir, d))
-    and not d.startswith('.')
-]
-courses.sort()
-course = st.selectbox("Select your course:", courses)
-course_folder = os.path.join(base_course_dir, course)
+# --- Dynamic course discovery
+COURSE_MATERIALS_ROOT = "course_materials"
+courses = [d for d in os.listdir(COURSE_MATERIALS_ROOT)
+           if os.path.isdir(os.path.join(COURSE_MATERIALS_ROOT, d))]
+if not courses:
+    courses = ["PTA_1010"]  # fallback
+
+course = st.selectbox("Select your course:", sorted(courses))
+course_folder = os.path.join(COURSE_MATERIALS_ROOT, course)
 
 def load_pdf_text(folder):
     text = ""
@@ -113,6 +113,7 @@ if uploaded_pptx:
     pptx_text = extract_notes_from_uploaded_pptx(uploaded_pptx)
     st.sidebar.success("PowerPoint notes extracted. Chatbot will use these as course content.")
 
+# --- OpenAI setup (NO OpenAI object needed) ---
 openai_api_key = st.secrets["openai"]["api_key"]
 openai.api_key = openai_api_key
 
@@ -120,47 +121,9 @@ log_path = Path("grading_log.csv")
 if not log_path.exists():
     pd.DataFrame(columns=[
         "username", "question_id", "question_text", "user_answer",
-        "correct_answer", "correct", "timestamp", "topic", "blooms_level"
+        "correct_answer", "correct", "topic", "blooms_level", "timestamp"
     ]).to_csv(log_path, index=False)
 
-# --------- Instructor Dashboard with UI Controls -----------
-if user_role == "admin":
-    st.sidebar.header("🧑‍🏫 Instructor Dashboard")
-    min_score = st.sidebar.slider("Flag students below this score (%)", 0, 100, 60)
-    min_attempts = st.sidebar.number_input("Minimum questions attempted", 1, 50, 5)
-    min_score_frac = min_score / 100
-
-    try:
-        df = pd.read_csv(log_path)
-        summary = (
-            df.groupby("username")["correct"]
-            .agg(['mean', 'count'])
-            .reset_index()
-            .rename(columns={'mean': 'score', 'count': 'attempts'})
-        )
-        flagged = summary[(summary['score'] < min_score_frac) & (summary['attempts'] >= min_attempts)]
-        st.markdown("### 🚩 Students Flagged as Struggling")
-        st.dataframe(flagged, use_container_width=True)
-
-        drill_user = st.selectbox("Drill down: select a student", [""] + list(flagged['username']))
-        if drill_user:
-            st.markdown(f"#### Details for `{drill_user}`")
-            user_rows = df[df['username'] == drill_user]
-            if 'topic' in user_rows.columns:
-                st.markdown("**By Topic:**")
-                st.dataframe(user_rows.groupby("topic")["correct"].mean().reset_index().rename(columns={"correct": "Score"}))
-            if 'blooms_level' in user_rows.columns:
-                st.markdown("**By Bloom's Level:**")
-                st.dataframe(user_rows.groupby("blooms_level")["correct"].mean().reset_index().rename(columns={"correct": "Score"}))
-            st.markdown("**Raw Results:**")
-            st.dataframe(user_rows, use_container_width=True)
-
-        csv = flagged.to_csv(index=False)
-        st.download_button("Download flagged report CSV", csv, "flagged_students.csv", "text/csv")
-    except Exception as e:
-        st.error(f"Admin dashboard error: {e}")
-
-# ------ Student main area ------
 st.header("💬 Chat with the Tutor")
 
 if "messages" not in st.session_state:
@@ -212,8 +175,8 @@ If the question is unrelated to the material, respond: 'I'm sorry, I can only he
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
 
-# --- Quiz Generator with Interactive Answer Collection ---
-st.header("📝 Interactive Quiz Generator")
+# --- Quiz Generator with Blooms Levels 1–5 ---
+st.header("📝 Quiz Generator")
 
 bloom_option = st.selectbox(
     "Choose Bloom's Taxonomy Level for Quiz:",
@@ -227,24 +190,7 @@ bloom_option = st.selectbox(
     ]
 )
 
-if "quiz" not in st.session_state:
-    st.session_state.quiz = None
-if "quiz_answers" not in st.session_state:
-    st.session_state.quiz_answers = {}
-
-def parse_gpt_json(json_str):
-    try:
-        return json.loads(json_str)
-    except Exception:
-        # Try to recover from formatting issues
-        import re
-        try:
-            cleaned = re.sub(r'```json|```', '', json_str, flags=re.IGNORECASE)
-            return json.loads(cleaned)
-        except Exception:
-            return []
-
-if st.button("Generate New Quiz"):
+if st.button("Generate Quiz"):
     if pptx_text:
         course_content = pptx_text
     elif txt_text:
@@ -283,8 +229,6 @@ if st.button("Generate New Quiz"):
         "2) Present the question in official NPTE exam style, "
         "3) Provide 4 answer options (A-D), "
         "4) List the correct answer after each question. "
-        "Also include a field for the main topic/concept assessed. "
-        "Respond ONLY in valid JSON as a list of objects with these keys: question, options, answer, rationale, topic, blooms_level."
         "Use only the provided material.\n\n"
         + course_content
     )
@@ -294,82 +238,89 @@ if st.button("Generate New Quiz"):
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": quiz_prompt}]
         )
-        quiz_json = response.choices[0].message.content
-        quiz_data = parse_gpt_json(quiz_json)
-        if not isinstance(quiz_data, list):
-            st.error("Quiz format error.")
-            quiz_data = []
-        st.session_state.quiz = quiz_data
-        st.session_state.quiz_answers = {}
-    except Exception as e:
-        st.error(f"❌ Failed to generate quiz: {str(e)}")
-        st.session_state.quiz = None
+        quiz_text = response.choices[0].message.content
+        st.markdown("### ✏️ Quiz Output")
+        st.markdown(quiz_text)
 
-# ---- Render Quiz UI and collect answers ----
-quiz = st.session_state.quiz
-quiz_answers = st.session_state.quiz_answers
-if quiz:
-    st.markdown("### Answer the Quiz:")
-    with st.form("quiz_form"):
-        for idx, q in enumerate(quiz):
-            st.markdown(f"**Q{idx+1}:** {q['question']}")
-            selected = st.radio(
-                f"Choose your answer for Q{idx+1}",
-                q["options"],
-                key=f"quiz_{idx}_answer"
-            )
-            quiz_answers[str(idx)] = selected
-            st.markdown("---")
-        submitted = st.form_submit_button("Submit Quiz")
-
-    if submitted:
-        feedback = []
-        sample_log = []
-        num_correct = 0
-
-        for idx, q in enumerate(quiz):
-            user_ans = quiz_answers.get(str(idx), None)
-            correct_ans = q['answer']
-            correct = int(user_ans == correct_ans)
-            if correct:
-                fb = f"✅ Q{idx+1} Correct!"
-            else:
-                fb = f"❌ Q{idx+1} Incorrect. Correct answer: {correct_ans}."
-                fb += f"\n- Topic to review: **{q.get('topic','Unknown')}**\n- Rationale: {q.get('rationale','')}"
-            feedback.append(fb)
-            if correct:
-                num_correct += 1
-
-            # Save detailed log
-            sample_log.append({
+        # Simulated grading - real logic would parse actual answers!
+        sample_log = [
+            {
                 "username": username,
-                "question_id": f"Q{idx+1}",
-                "question_text": q["question"],
-                "user_answer": user_ans,
-                "correct_answer": correct_ans,
-                "correct": correct,
-                "timestamp": datetime.now().isoformat(),
-                "topic": q.get("topic", ""),
-                "blooms_level": q.get("blooms_level", ""),
-            })
+                "question_id": "Q001",
+                "question_text": "What is the primary muscle responsible for knee extension?",
+                "user_answer": "A",
+                "correct_answer": "A",
+                "correct": 1,
+                "topic": "Knee Anatomy",
+                "blooms_level": "1",
+                "timestamp": datetime.now().isoformat()
+            },
+            {
+                "username": username,
+                "question_id": "Q002",
+                "question_text": "Which is a contraindication to ultrasound?",
+                "user_answer": "C",
+                "correct_answer": "A",
+                "correct": 0,
+                "topic": "Modalities",
+                "blooms_level": "2",
+                "timestamp": datetime.now().isoformat()
+            }
+        ]
 
-        # Save results to CSV log
         df = pd.read_csv(log_path)
         df = pd.concat([df, pd.DataFrame(sample_log)], ignore_index=True)
         df.to_csv(log_path, index=False)
 
-        # Show feedback summary
-        st.markdown(f"## Your Score: {num_correct}/{len(quiz)}")
-        st.markdown("---".join(feedback))
+    except Exception as e:
+        st.error(f"❌ Failed to generate quiz: {str(e)}")
 
-# --- Performance Summary ---
-with st.expander("📊 Show Performance Summary", expanded=False):
+# --- Instructor Dashboard (admin only) ---
+if user_role == "admin":
+    st.header("📊 Instructor Dashboard: Flagged/Struggling Students")
+    st.markdown("Use controls below to adjust the criteria for flagging students.")
+
+    min_score_frac = st.slider("Minimum score for NOT being flagged (as a fraction)", 0.0, 1.0, 0.7, 0.05)
+    min_attempts = st.number_input("Minimum number of quiz attempts to be considered", 1, 20, 3, 1)
+
     try:
         df = pd.read_csv(log_path)
-        if user_role == "admin":
-            user_df = df
+        if df.empty or "username" not in df.columns or df["username"].isnull().all():
+            st.info("No student quiz data yet. Flagged students and analytics will appear after quizzes are taken.")
         else:
-            user_df = df[df["username"] == username]
+            summary = (
+                df.groupby("username")["correct"]
+                .agg(['mean', 'count'])
+                .reset_index()
+                .rename(columns={'mean': 'score', 'count': 'attempts'})
+            )
+            flagged = summary[(summary['score'] < min_score_frac) & (summary['attempts'] >= min_attempts)]
+            st.markdown("### 🚩 Students Flagged as Struggling")
+            st.dataframe(flagged, use_container_width=True)
+
+            drill_user = st.selectbox("Drill down: select a student", [""] + list(flagged['username']))
+            if drill_user:
+                st.markdown(f"#### Details for `{drill_user}`")
+                user_rows = df[df['username'] == drill_user]
+                if 'topic' in user_rows.columns and not user_rows['topic'].isnull().all():
+                    st.markdown("**By Topic:**")
+                    st.dataframe(user_rows.groupby("topic")["correct"].mean().reset_index().rename(columns={"correct": "Score"}))
+                if 'blooms_level' in user_rows.columns and not user_rows['blooms_level'].isnull().all():
+                    st.markdown("**By Bloom's Level:**")
+                    st.dataframe(user_rows.groupby("blooms_level")["correct"].mean().reset_index().rename(columns={"correct": "Score"}))
+                st.markdown("**Raw Results:**")
+                st.dataframe(user_rows, use_container_width=True)
+
+            csv = flagged.to_csv(index=False)
+            st.download_button("Download flagged report CSV", csv, "flagged_students.csv", "text/csv")
+    except Exception as e:
+        st.error(f"Admin dashboard error: {e}")
+
+# --- Student Performance Summary ---
+with st.expander("📊 Show My Performance Summary", expanded=False):
+    try:
+        df = pd.read_csv(log_path)
+        user_df = df[df["username"] == username] if user_role != "admin" else df
         correct_total = user_df["correct"].sum()
         incorrect_total = len(user_df) - correct_total
 
@@ -377,20 +328,12 @@ with st.expander("📊 Show Performance Summary", expanded=False):
         st.write(f"✅ Correct: {correct_total}")
         st.write(f"❌ Incorrect: {incorrect_total}")
 
-        fig, ax = plt.subplots()
-        ax.bar(["Correct", "Incorrect"], [correct_total, incorrect_total])
-        ax.set_ylabel("Number of Responses")
-        ax.set_title("Student Performance")
-        st.pyplot(fig)
-
-        if "topic" in user_df.columns:
-            topic_stats = user_df.groupby("topic")["correct"].mean().reset_index()
-            st.write("### By Topic")
-            st.dataframe(topic_stats)
-        if "blooms_level" in user_df.columns:
-            bloom_stats = user_df.groupby("blooms_level")["correct"].mean().reset_index()
-            st.write("### By Bloom's Level")
-            st.dataframe(bloom_stats)
+        if not user_df.empty:
+            fig, ax = plt.subplots()
+            ax.bar(["Correct", "Incorrect"], [correct_total, incorrect_total])
+            ax.set_ylabel("Number of Responses")
+            ax.set_title("Student Performance")
+            st.pyplot(fig)
 
     except Exception as e:
         st.warning("⚠️ No grading data available or error reading log.")
