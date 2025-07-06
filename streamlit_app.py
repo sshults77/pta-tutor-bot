@@ -11,62 +11,55 @@ from pathlib import Path
 from pptx import Presentation
 import openai
 
-# --- Load users from YAML ---
-with open('users.yaml') as file:
-    config = yaml.load(file, Loader=SafeLoader)
+# --- CONFIGURATION AND SETUP ---
 
-authenticator = stauth.Authenticate(
-    config['credentials'],
-    config['cookie']['name'],
-    config['cookie']['key'],
-    config['cookie']['expiry_days']
-)
+def load_yaml_config(yaml_file="users.yaml"):
+    """Load configuration from a YAML file (e.g., users, roles, cookies)."""
+    with open(yaml_file) as file:
+        return yaml.load(file, Loader=SafeLoader)
 
-# --- LOGIN ---
-login_result = authenticator.login(location='main')
-if login_result is None:
-    st.stop()
-
-if isinstance(login_result, tuple):
-    if len(login_result) == 2:
-        name, authentication_status = login_result
-        username = getattr(authenticator, "username", None)
-    elif len(login_result) == 3:
-        name, authentication_status, username = login_result
-    else:
-        st.error("Unknown login return value structure.")
+def authenticate_user(config):
+    """Authenticate user using streamlit-authenticator and return user info."""
+    authenticator = stauth.Authenticate(
+        config['credentials'],
+        config['cookie']['name'],
+        config['cookie']['key'],
+        config['cookie']['expiry_days']
+    )
+    login_result = authenticator.login(location='main')
+    if login_result is None:
         st.stop()
-else:
-    st.error("Unexpected login return type.")
-    st.stop()
+    if isinstance(login_result, tuple):
+        if len(login_result) == 2:
+            name, authentication_status = login_result
+            username = getattr(authenticator, "username", None)
+        elif len(login_result) == 3:
+            name, authentication_status, username = login_result
+        else:
+            st.error("Unknown login return value structure.")
+            st.stop()
+    else:
+        st.error("Unexpected login return type.")
+        st.stop()
+    if authentication_status is False:
+        st.error("Username/password is incorrect")
+        st.stop()
+    elif authentication_status is None:
+        st.warning("Please enter your username and password")
+        st.stop()
+    return name, username, config['credentials']['usernames'][username]['role']
 
-if authentication_status is False:
-    st.error("Username/password is incorrect")
-    st.stop()
-elif authentication_status is None:
-    st.warning("Please enter your username and password")
-    st.stop()
+def discover_courses(root="course_materials"):
+    """Dynamically find all course folders inside a root directory."""
+    if not os.path.exists(root):
+        return ["PTA_1010"]
+    courses = [d for d in os.listdir(root) if os.path.isdir(os.path.join(root, d))]
+    return courses or ["PTA_1010"]
 
-# Get user role for instructor dashboard
-user_role = config['credentials']['usernames'][username]['role']
+# --- CONTENT LOADING ---
 
-st.sidebar.write(f"Logged in as: **{name}** ({username})")
-st.success("Login success! You now see the main app.")
-
-# --- Main App ---
-st.title("📚 PTA Tutor Chatbot with Quiz & Performance Tracker")
-
-# --- Dynamic course discovery
-COURSE_MATERIALS_ROOT = "course_materials"
-courses = [d for d in os.listdir(COURSE_MATERIALS_ROOT)
-           if os.path.isdir(os.path.join(COURSE_MATERIALS_ROOT, d))]
-if not courses:
-    courses = ["PTA_1010"]  # fallback
-
-course = st.selectbox("Select your course:", sorted(courses))
-course_folder = os.path.join(COURSE_MATERIALS_ROOT, course)
-
-def load_pdf_text(folder):
+def load_pdf_text(folder, char_limit=3000):
+    """Concatenate the text from all PDFs in a folder, up to a character limit."""
     text = ""
     if os.path.exists(folder):
         for filename in os.listdir(folder):
@@ -77,11 +70,12 @@ def load_pdf_text(folder):
                         page_text = page.extract_text()
                         if page_text:
                             text += page_text
-    return text
+                            if len(text) >= char_limit:
+                                break
+    return text[:char_limit]
 
-pdf_text = load_pdf_text(course_folder)[:3000]
-
-def load_txt_content(folder):
+def load_txt_content(folder, char_limit=3000):
+    """Load first .txt file in a folder, up to a character limit."""
     txt_file = None
     if os.path.exists(folder):
         for filename in os.listdir(folder):
@@ -90,12 +84,11 @@ def load_txt_content(folder):
                 break
     if txt_file:
         with open(txt_file, "r", encoding="utf-8") as f:
-            return f.read()
+            return f.read()[:char_limit]
     return ""
 
-txt_text = load_txt_content(course_folder)[:3000]
-
 def extract_notes_from_uploaded_pptx(uploaded_file):
+    """Extract all notes from uploaded PowerPoint slides as plain text."""
     prs = Presentation(uploaded_file)
     all_notes = []
     for i, slide in enumerate(prs.slides):
@@ -106,51 +99,20 @@ def extract_notes_from_uploaded_pptx(uploaded_file):
         all_notes.append(f"{slide_title}:\n{notes_text}\n")
     return "\n".join(all_notes)
 
-st.sidebar.header("Optional: Upload PowerPoint for Chatbot Content")
-uploaded_pptx = st.sidebar.file_uploader("Upload a PowerPoint (.pptx)", type="pptx")
-pptx_text = ""
-if uploaded_pptx:
-    pptx_text = extract_notes_from_uploaded_pptx(uploaded_pptx)
-    st.sidebar.success("PowerPoint notes extracted. Chatbot will use these as course content.")
+# --- CHATBOT LOGIC ---
 
-# --- OpenAI setup (NO OpenAI object needed) ---
-openai_api_key = st.secrets["openai"]["api_key"]
-openai.api_key = openai_api_key
-
-log_path = Path("grading_log.csv")
-if not log_path.exists():
-    pd.DataFrame(columns=[
-        "username", "question_id", "question_text", "user_answer",
-        "correct_answer", "correct", "topic", "blooms_level", "timestamp"
-    ]).to_csv(log_path, index=False)
-
-st.header("💬 Chat with the Tutor")
-
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-if prompt := st.chat_input("Ask a question about your course..."):
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-
+def get_course_content(pptx_text, txt_text, pdf_text):
+    """Priority order: PowerPoint notes > text file > PDF text."""
     if pptx_text:
-        course_content = pptx_text
-        content_source = "PowerPoint notes"
+        return pptx_text, "PowerPoint notes"
     elif txt_text:
-        course_content = txt_text
-        content_source = "Text file"
+        return txt_text, "Text file"
     else:
-        course_content = pdf_text
-        content_source = "PDF"
+        return pdf_text, "PDF"
 
-    st.info(f"Chatbot is using: {content_source}")
-
-    system_prompt = {
+def get_system_prompt(course_content):
+    """Construct the system prompt for the chatbot, disallowing slide references."""
+    return {
         "role": "system",
         "content": f"""You are a knowledgeable and focused PTA tutor.
 
@@ -163,120 +125,136 @@ Do NOT reference slide numbers or slide locations in any answers or questions. O
 If the question is unrelated to the material, respond: 'I'm sorry, I can only help with the course content provided.'"""
     }
 
-    try:
-        response = openai.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[system_prompt] + st.session_state.messages
-        )
-        reply = response.choices[0].message.content
-        with st.chat_message("assistant"):
-            st.markdown(reply)
-        st.session_state.messages.append({"role": "assistant", "content": reply})
-    except Exception as e:
-        st.error(f"❌ Error: {str(e)}")
+def chat_with_tutor(st, messages, pptx_text, txt_text, pdf_text):
+    """Manage chat UI and OpenAI call for Q&A."""
+    st.header("💬 Chat with the Tutor")
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
 
-# --- Quiz Generator with Blooms Levels 1–5 ---
-st.header("📝 Quiz Generator")
+    # Display previous chat messages
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
-bloom_option = st.selectbox(
-    "Choose Bloom's Taxonomy Level for Quiz:",
-    [
-        "1 (Recall/Knowledge)",
-        "2 (Comprehension)",
-        "3 (Application)",
-        "4 (Analysis)",
-        "5 (Synthesis/Evaluation)",
-        "Mixed (Levels 1–5)"
-    ]
-)
+    # User submits new question
+    if prompt := st.chat_input("Ask a question about your course..."):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
-if st.button("Generate Quiz"):
-    if pptx_text:
-        course_content = pptx_text
-    elif txt_text:
-        course_content = txt_text
-    else:
-        course_content = pdf_text
+        course_content, content_source = get_course_content(pptx_text, txt_text, pdf_text)
+        st.info(f"Chatbot is using: {content_source}")
 
-    blooms_level_map = {
-        "1": "Recall/Knowledge",
-        "2": "Comprehension",
-        "3": "Application",
-        "4": "Analysis",
-        "5": "Synthesis/Evaluation"
-    }
+        system_prompt = get_system_prompt(course_content)
+        try:
+            response = openai.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[system_prompt] + st.session_state.messages
+            )
+            reply = response.choices[0].message.content
+            with st.chat_message("assistant"):
+                st.markdown(reply)
+            st.session_state.messages.append({"role": "assistant", "content": reply})
+        except Exception as e:
+            st.error(f"❌ Error: {str(e)}")
 
-    if bloom_option.startswith("Mixed"):
-        blooms_instruction = (
-            "Generate 5 NPTE-style multiple-choice questions: "
-            "one each at Bloom's Level 1 (Recall/Knowledge), "
-            "Level 2 (Comprehension), Level 3 (Application), "
-            "Level 4 (Analysis), and Level 5 (Synthesis/Evaluation). "
-        )
-    else:
-        level = bloom_option[0]
-        level_name = blooms_level_map.get(level, "")
-        blooms_instruction = (
-            f"Generate 5 NPTE-style multiple-choice questions at Bloom's Level {level} ({level_name}). "
-        )
+# --- QUIZ GENERATOR AND GRADING LOGIC ---
 
-    quiz_prompt = (
-        f"You are a Physical Therapist Assistant tutor. Based on the following course content, "
-        f"{blooms_instruction}"
-        "Do NOT reference slide numbers or slide locations in any questions. Focus only on content."
-        "For each question: "
-        "1) State the Bloom's Taxonomy level, "
-        "2) Present the question in official NPTE exam style, "
-        "3) Provide 4 answer options (A-D), "
-        "4) List the correct answer after each question. "
-        "Use only the provided material.\n\n"
-        + course_content
-    )
-
-    try:
-        response = openai.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": quiz_prompt}]
-        )
-        quiz_text = response.choices[0].message.content
-        st.markdown("### ✏️ Quiz Output")
-        st.markdown(quiz_text)
-
-        # Simulated grading - real logic would parse actual answers!
-        sample_log = [
-            {
-                "username": username,
-                "question_id": "Q001",
-                "question_text": "What is the primary muscle responsible for knee extension?",
-                "user_answer": "A",
-                "correct_answer": "A",
-                "correct": 1,
-                "topic": "Knee Anatomy",
-                "blooms_level": "1",
-                "timestamp": datetime.now().isoformat()
-            },
-            {
-                "username": username,
-                "question_id": "Q002",
-                "question_text": "Which is a contraindication to ultrasound?",
-                "user_answer": "C",
-                "correct_answer": "A",
-                "correct": 0,
-                "topic": "Modalities",
-                "blooms_level": "2",
-                "timestamp": datetime.now().isoformat()
-            }
+def generate_quiz(st, username, pptx_text, txt_text, pdf_text, log_path):
+    """Quiz generator UI and logic, writes quiz results to grading log."""
+    st.header("📝 Quiz Generator")
+    bloom_option = st.selectbox(
+        "Choose Bloom's Taxonomy Level for Quiz:",
+        [
+            "1 (Recall/Knowledge)",
+            "2 (Comprehension)",
+            "3 (Application)",
+            "4 (Analysis)",
+            "5 (Synthesis/Evaluation)",
+            "Mixed (Levels 1–5)"
         ]
+    )
+    if st.button("Generate Quiz"):
+        course_content, _ = get_course_content(pptx_text, txt_text, pdf_text)
+        blooms_level_map = {
+            "1": "Recall/Knowledge",
+            "2": "Comprehension",
+            "3": "Application",
+            "4": "Analysis",
+            "5": "Synthesis/Evaluation"
+        }
+        if bloom_option.startswith("Mixed"):
+            blooms_instruction = (
+                "Generate 5 NPTE-style multiple-choice questions: "
+                "one each at Bloom's Level 1 (Recall/Knowledge), "
+                "Level 2 (Comprehension), Level 3 (Application), "
+                "Level 4 (Analysis), and Level 5 (Synthesis/Evaluation). "
+            )
+        else:
+            level = bloom_option[0]
+            level_name = blooms_level_map.get(level, "")
+            blooms_instruction = (
+                f"Generate 5 NPTE-style multiple-choice questions at Bloom's Level {level} ({level_name}). "
+            )
 
-        df = pd.read_csv(log_path)
-        df = pd.concat([df, pd.DataFrame(sample_log)], ignore_index=True)
-        df.to_csv(log_path, index=False)
+        quiz_prompt = (
+            f"You are a Physical Therapist Assistant tutor. Based on the following course content, "
+            f"{blooms_instruction}"
+            "Do NOT reference slide numbers or slide locations in any questions. Focus only on content."
+            "For each question: "
+            "1) State the Bloom's Taxonomy level, "
+            "2) Present the question in official NPTE exam style, "
+            "3) Provide 4 answer options (A-D), "
+            "4) List the correct answer after each question. "
+            "Use only the provided material.\n\n"
+            + course_content
+        )
 
-    except Exception as e:
-        st.error(f"❌ Failed to generate quiz: {str(e)}")
+        try:
+            response = openai.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": quiz_prompt}]
+            )
+            quiz_text = response.choices[0].message.content
+            st.markdown("### ✏️ Quiz Output")
+            st.markdown(quiz_text)
 
-# --- Instructor Dashboard (admin only) ---
-if user_role == "admin":
+            # Simulated grading. Replace with real quiz parsing/answer checking in production.
+            sample_log = [
+                {
+                    "username": username,
+                    "question_id": "Q001",
+                    "question_text": "What is the primary muscle responsible for knee extension?",
+                    "user_answer": "A",
+                    "correct_answer": "A",
+                    "correct": 1,
+                    "topic": "Knee Anatomy",
+                    "blooms_level": "1",
+                    "timestamp": datetime.now().isoformat()
+                },
+                {
+                    "username": username,
+                    "question_id": "Q002",
+                    "question_text": "Which is a contraindication to ultrasound?",
+                    "user_answer": "C",
+                    "correct_answer": "A",
+                    "correct": 0,
+                    "topic": "Modalities",
+                    "blooms_level": "2",
+                    "timestamp": datetime.now().isoformat()
+                }
+            ]
+            df = pd.read_csv(log_path)
+            df = pd.concat([df, pd.DataFrame(sample_log)], ignore_index=True)
+            df.to_csv(log_path, index=False)
+
+        except Exception as e:
+            st.error(f"❌ Failed to generate quiz: {str(e)}")
+
+# --- INSTRUCTOR DASHBOARD ---
+
+def instructor_dashboard(log_path):
+    """Show flagged/struggling students, allow drilldown and download, instructor controls."""
     st.header("📊 Instructor Dashboard: Flagged/Struggling Students")
     st.markdown("Use controls below to adjust the criteria for flagging students.")
 
@@ -316,25 +294,77 @@ if user_role == "admin":
     except Exception as e:
         st.error(f"Admin dashboard error: {e}")
 
-# --- Student Performance Summary ---
-with st.expander("📊 Show My Performance Summary", expanded=False):
-    try:
-        df = pd.read_csv(log_path)
-        user_df = df[df["username"] == username] if user_role != "admin" else df
-        correct_total = user_df["correct"].sum()
-        incorrect_total = len(user_df) - correct_total
+# --- STUDENT PERFORMANCE SUMMARY ---
 
-        st.write(f"Total Questions Answered: {len(user_df)}")
-        st.write(f"✅ Correct: {correct_total}")
-        st.write(f"❌ Incorrect: {incorrect_total}")
+def student_performance_summary(log_path, username, user_role):
+    """Show student or admin (all students) performance summary, with basic bar chart."""
+    with st.expander("📊 Show My Performance Summary", expanded=False):
+        try:
+            df = pd.read_csv(log_path)
+            user_df = df[df["username"] == username] if user_role != "admin" else df
+            correct_total = user_df["correct"].sum()
+            incorrect_total = len(user_df) - correct_total
 
-        if not user_df.empty:
-            fig, ax = plt.subplots()
-            ax.bar(["Correct", "Incorrect"], [correct_total, incorrect_total])
-            ax.set_ylabel("Number of Responses")
-            ax.set_title("Student Performance")
-            st.pyplot(fig)
+            st.write(f"Total Questions Answered: {len(user_df)}")
+            st.write(f"✅ Correct: {correct_total}")
+            st.write(f"❌ Incorrect: {incorrect_total}")
 
-    except Exception as e:
-        st.warning("⚠️ No grading data available or error reading log.")
-        st.text(str(e))
+            if not user_df.empty:
+                fig, ax = plt.subplots()
+                ax.bar(["Correct", "Incorrect"], [correct_total, incorrect_total])
+                ax.set_ylabel("Number of Responses")
+                ax.set_title("Student Performance")
+                st.pyplot(fig)
+
+        except Exception as e:
+            st.warning("⚠️ No grading data available or error reading log.")
+            st.text(str(e))
+
+
+# ======================= MAIN APP ENTRYPOINT =======================
+
+def main():
+    # --- Load config and authenticate user ---
+    config = load_yaml_config("users.yaml")
+    name, username, user_role = authenticate_user(config)
+    st.sidebar.write(f"Logged in as: **{name}** ({username})")
+    st.success("Login success! You now see the main app.")
+
+    # --- Course and Content Selection ---
+    st.title("📚 PTA Tutor Chatbot with Quiz & Performance Tracker")
+    courses = discover_courses()
+    course = st.selectbox("Select your course:", sorted(courses))
+    course_folder = os.path.join("course_materials", course)
+
+    # --- Load all content sources (pdf/txt/pptx) ---
+    pdf_text = load_pdf_text(course_folder)
+    txt_text = load_txt_content(course_folder)
+    st.sidebar.header("Optional: Upload PowerPoint for Chatbot Content")
+    uploaded_pptx = st.sidebar.file_uploader("Upload a PowerPoint (.pptx)", type="pptx")
+    pptx_text = ""
+    if uploaded_pptx:
+        pptx_text = extract_notes_from_uploaded_pptx(uploaded_pptx)
+        st.sidebar.success("PowerPoint notes extracted. Chatbot will use these as course content.")
+
+    # --- OpenAI API Setup ---
+    openai_api_key = st.secrets["openai"]["api_key"]
+    openai.api_key = openai_api_key
+
+    # --- Grading Log (shared for quizzes and dashboard) ---
+    log_path = Path("grading_log.csv")
+    if not log_path.exists():
+        pd.DataFrame(columns=[
+            "username", "question_id", "question_text", "user_answer",
+            "correct_answer", "correct", "topic", "blooms_level", "timestamp"
+        ]).to_csv(log_path, index=False)
+
+    # --- Main Functionality ---
+    chat_with_tutor(st, st.session_state.get("messages", []), pptx_text, txt_text, pdf_text)
+    generate_quiz(st, username, pptx_text, txt_text, pdf_text, log_path)
+    if user_role == "admin":
+        instructor_dashboard(log_path)
+    student_performance_summary(log_path, username, user_role)
+
+# --- Standard streamlit main entrypoint guard ---
+if __name__ == "__main__":
+    main()
