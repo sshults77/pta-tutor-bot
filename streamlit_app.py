@@ -11,7 +11,7 @@ from pathlib import Path
 from pptx import Presentation
 import openai
 
-# -------------- USER AUTHENTICATION --------------
+# --- Load users from YAML ---
 with open('users.yaml') as file:
     config = yaml.load(file, Loader=SafeLoader)
 
@@ -22,6 +22,7 @@ authenticator = stauth.Authenticate(
     config['cookie']['expiry_days']
 )
 
+# --- LOGIN ---
 login_result = authenticator.login(location='main')
 if login_result is None:
     st.stop()
@@ -46,11 +47,16 @@ elif authentication_status is None:
     st.warning("Please enter your username and password")
     st.stop()
 
+# Get user role for instructor dashboard
 user_role = config['credentials']['usernames'][username]['role']
+
 st.sidebar.write(f"Logged in as: **{name}** ({username})")
 st.success("Login success! You now see the main app.")
 
-# -------------- COURSE DISCOVERY --------------
+# --- Main App ---
+st.title("📚 PTA Tutor Chatbot with Quiz & Performance Tracker")
+
+# --- Dynamic course discovery
 COURSE_MATERIALS_ROOT = "course_materials"
 courses = [d for d in os.listdir(COURSE_MATERIALS_ROOT)
            if os.path.isdir(os.path.join(COURSE_MATERIALS_ROOT, d))]
@@ -60,7 +66,6 @@ if not courses:
 course = st.selectbox("Select your course:", sorted(courses))
 course_folder = os.path.join(COURSE_MATERIALS_ROOT, course)
 
-# -------------- LOADING COURSE CONTENT --------------
 def load_pdf_text(folder):
     text = ""
     if os.path.exists(folder):
@@ -74,6 +79,8 @@ def load_pdf_text(folder):
                             text += page_text
     return text
 
+pdf_text = load_pdf_text(course_folder)[:3000]
+
 def load_txt_content(folder):
     txt_file = None
     if os.path.exists(folder):
@@ -86,6 +93,8 @@ def load_txt_content(folder):
             return f.read()
     return ""
 
+txt_text = load_txt_content(course_folder)[:3000]
+
 def extract_notes_from_uploaded_pptx(uploaded_file):
     prs = Presentation(uploaded_file)
     all_notes = []
@@ -97,9 +106,6 @@ def extract_notes_from_uploaded_pptx(uploaded_file):
         all_notes.append(f"{slide_title}:\n{notes_text}\n")
     return "\n".join(all_notes)
 
-pdf_text = load_pdf_text(course_folder)[:3000]
-txt_text = load_txt_content(course_folder)[:3000]
-
 st.sidebar.header("Optional: Upload PowerPoint for Chatbot Content")
 uploaded_pptx = st.sidebar.file_uploader("Upload a PowerPoint (.pptx)", type="pptx")
 pptx_text = ""
@@ -107,19 +113,20 @@ if uploaded_pptx:
     pptx_text = extract_notes_from_uploaded_pptx(uploaded_pptx)
     st.sidebar.success("PowerPoint notes extracted. Chatbot will use these as course content.")
 
-# -------------- OPENAI SETUP --------------
+# --- OpenAI setup ---
 openai_api_key = st.secrets["openai"]["api_key"]
 openai.api_key = openai_api_key
 
 log_path = Path("grading_log.csv")
 if not log_path.exists():
     pd.DataFrame(columns=[
-        "username", "question_id", "question_text", "user_answer",
-        "correct_answer", "correct", "topic", "blooms_level", "timestamp", "course"
+        "username", "quiz_id", "question_id", "question_text", "user_answer",
+        "correct_answer", "correct", "topic", "blooms_level", "question_type",
+        "time_spent", "cohort", "timestamp"
     ]).to_csv(log_path, index=False)
 
-# -------------- CHATBOT SECTION --------------
 st.header("💬 Chat with the Tutor")
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -132,7 +139,6 @@ if prompt := st.chat_input("Ask a question about your course..."):
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Priority: pptx > txt > pdf
     if pptx_text:
         course_content = pptx_text
         content_source = "PowerPoint notes"
@@ -170,7 +176,7 @@ If the question is unrelated to the material, respond: 'I'm sorry, I can only he
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
 
-# -------------- QUIZ GENERATOR --------------
+# --- Quiz Generator with Blooms Levels 1–5 ---
 st.header("📝 Quiz Generator")
 
 bloom_option = st.selectbox(
@@ -237,10 +243,11 @@ if st.button("Generate Quiz"):
         st.markdown("### ✏️ Quiz Output")
         st.markdown(quiz_text)
 
-        # Simulated grading - replace with your answer parser in production!
+        # Simulated grading - replace with actual user answer collection as needed!
         sample_log = [
             {
                 "username": username,
+                "quiz_id": "quiz1",
                 "question_id": "Q001",
                 "question_text": "What is the primary muscle responsible for knee extension?",
                 "user_answer": "A",
@@ -248,11 +255,14 @@ if st.button("Generate Quiz"):
                 "correct": 1,
                 "topic": "Knee Anatomy",
                 "blooms_level": "1",
-                "timestamp": datetime.now().isoformat(),
-                "course": course
+                "question_type": "multiple_choice",
+                "time_spent": 45,
+                "cohort": "2025A",
+                "timestamp": datetime.now().isoformat()
             },
             {
                 "username": username,
+                "quiz_id": "quiz1",
                 "question_id": "Q002",
                 "question_text": "Which is a contraindication to ultrasound?",
                 "user_answer": "C",
@@ -260,8 +270,10 @@ if st.button("Generate Quiz"):
                 "correct": 0,
                 "topic": "Modalities",
                 "blooms_level": "2",
-                "timestamp": datetime.now().isoformat(),
-                "course": course
+                "question_type": "multiple_choice",
+                "time_spent": 40,
+                "cohort": "2025A",
+                "timestamp": datetime.now().isoformat()
             }
         ]
 
@@ -272,110 +284,108 @@ if st.button("Generate Quiz"):
     except Exception as e:
         st.error(f"❌ Failed to generate quiz: {str(e)}")
 
-# -------------- INSTRUCTOR DASHBOARD (admin only) --------------
+# --- Instructor Drill-Down Dashboard (NEW SECTION) ---
 if user_role == "admin":
-    st.header("📊 Instructor Dashboard: Flagged/Struggling Students")
+    st.header("📊 Instructor Drill-Down Dashboard")
 
-    # --- Filter by course ---
+    # --- Load Grading Log Data ---
     try:
-        df = pd.read_csv(log_path)
-        all_courses = df['course'].dropna().unique().tolist() if 'course' in df.columns else [course]
-        selected_course = st.selectbox("Filter dashboard by course:", sorted(all_courses))
-        df = df[df['course'] == selected_course]
-    except Exception:
-        df = pd.read_csv(log_path)  # fallback
-
-    st.markdown("Use the controls below to adjust criteria for flagging students.")
-
-    min_score_frac = st.slider("Minimum average score to NOT be flagged (as a fraction)", 0.0, 1.0, 0.7, 0.05)
-    min_attempts = st.number_input("Minimum quiz attempts before a student is evaluated", 1, 20, 3, 1)
-
-    try:
-        if df.empty or "username" not in df.columns or df["username"].isnull().all():
-            st.info("No student quiz data yet. Flagged students and analytics will appear after quizzes are taken.")
-        else:
-            # --- ALL STUDENTS PERFORMANCE TABLE ---
-            st.subheader("🗂️ All Students: Quiz Performance")
-            summary = (
-                df.groupby("username")["correct"]
-                .agg(['mean', 'count'])
-                .reset_index()
-                .rename(columns={'mean': 'Avg Score', 'count': 'Attempts'})
-            )
-            st.dataframe(summary, use_container_width=True)
-
-            # --- GROUP TRENDS BREAKDOWN BY TOPIC ---
-            st.subheader("📈 Group Trends: Average Score by Topic")
-            if 'topic' in df.columns and not df['topic'].isnull().all():
-                topic_summary = (
-                    df.groupby("topic")["correct"]
-                    .mean()
-                    .reset_index()
-                    .rename(columns={"correct": "Avg Score"})
-                )
-                st.dataframe(topic_summary)
-                fig, ax = plt.subplots()
-                ax.bar(topic_summary['topic'], topic_summary['Avg Score'])
-                ax.set_ylabel("Average Score")
-                ax.set_xlabel("Topic")
-                ax.set_title("Group Average Score by Topic")
-                plt.xticks(rotation=30, ha='right')
-                st.pyplot(fig)
-
-            # --- GROUP COMPARISON CONTROLS ---
-            selected_students = st.multiselect(
-                "Compare these students:", summary['username'].tolist()
-            )
-            if selected_students:
-                comp_df = summary[summary['username'].isin(selected_students)]
-                st.markdown("#### 📊 Comparison of Selected Students")
-                fig, ax = plt.subplots()
-                ax.bar(comp_df['username'], comp_df['Avg Score'])
-                ax.set_ylabel("Average Score")
-                ax.set_title("Comparison of Selected Students")
-                st.pyplot(fig)
-                for stu in selected_students:
-                    st.markdown(f"##### Performance for `{stu}`")
-                    user_rows = df[df['username'] == stu]
-                    st.write(f"Correct answers: {user_rows['correct'].sum()} / {len(user_rows)}")
-                    if 'topic' in user_rows.columns and not user_rows['topic'].isnull().all():
-                        st.markdown("**By Topic:**")
-                        st.dataframe(user_rows.groupby("topic")["correct"].mean().reset_index().rename(columns={"correct": "Score"}))
-                    if 'blooms_level' in user_rows.columns and not user_rows['blooms_level'].isnull().all():
-                        st.markdown("**By Bloom's Level:**")
-                        st.dataframe(user_rows.groupby("blooms_level")["correct"].mean().reset_index().rename(columns={"correct": "Score"}))
-                    st.markdown("**Raw Results:**")
-                    st.dataframe(user_rows, use_container_width=True)
-
-            # --- FLAGGED STUDENTS ---
-            flagged = summary[(summary['Avg Score'] < min_score_frac) & (summary['Attempts'] >= min_attempts)]
-            st.markdown("### 🚩 Students Flagged as Struggling")
-            st.dataframe(flagged, use_container_width=True)
-
-            # --- DRILL DOWN (flagged students only) ---
-            drill_user = st.selectbox("Drill down: select a flagged student", [""] + list(flagged['username']))
-            if drill_user:
-                st.markdown(f"#### Details for `{drill_user}`")
-                user_rows = df[df['username'] == drill_user]
-                if 'topic' in user_rows.columns and not user_rows['topic'].isnull().all():
-                    st.markdown("**By Topic:**")
-                    st.dataframe(user_rows.groupby("topic")["correct"].mean().reset_index().rename(columns={"correct": "Score"}))
-                if 'blooms_level' in user_rows.columns and not user_rows['blooms_level'].isnull().all():
-                    st.markdown("**By Bloom's Level:**")
-                    st.dataframe(user_rows.groupby("blooms_level")["correct"].mean().reset_index().rename(columns={"correct": "Score"}))
-                st.markdown("**Raw Results:**")
-                st.dataframe(user_rows, use_container_width=True)
-
-            csv = flagged.to_csv(index=False)
-            st.download_button("Download flagged report CSV", csv, "flagged_students.csv", "text/csv")
+        df = pd.read_csv(log_path, parse_dates=["timestamp"])
     except Exception as e:
-        st.error(f"Admin dashboard error: {e}")
+        st.error(f"Could not read grading log: {e}")
+        st.stop()
 
-# -------------- STUDENT PERFORMANCE SUMMARY --------------
+    # --- Sidebar Filters ---
+    st.sidebar.subheader("Drill-Down Filters")
+    students = ["All"] + sorted(df["username"].dropna().unique().tolist())
+    student_filter = st.sidebar.selectbox("Student", students)
+    
+    blooms_levels = ["All"] + sorted(df["blooms_level"].dropna().astype(str).unique().tolist())
+    blooms_filter = st.sidebar.selectbox("Bloom's Level", blooms_levels)
+
+    # Date range filter
+    if "timestamp" in df.columns:
+        date_min, date_max = df["timestamp"].min(), df["timestamp"].max()
+        date_range = st.sidebar.date_input("Date Range", [date_min, date_max])
+    else:
+        date_range = []
+
+    quiz_ids = ["All"] + sorted(df["quiz_id"].dropna().unique().astype(str).tolist())
+    quiz_filter = st.sidebar.selectbox("Quiz", quiz_ids)
+
+    question_types = ["All"] + sorted(df.get("question_type", pd.Series([""])).dropna().unique().tolist())
+    question_type_filter = st.sidebar.selectbox("Question Type", question_types)
+
+    cohorts = ["All"] + sorted(df.get("cohort", pd.Series([""])).dropna().unique().tolist())
+    cohort_filter = st.sidebar.selectbox("Cohort", cohorts)
+
+    topics = ["All"] + sorted(df["topic"].dropna().unique().tolist())
+    topic_filter = st.sidebar.selectbox("Topic", topics)
+
+    # --- Apply Filters ---
+    filtered = df.copy()
+    if student_filter != "All":
+        filtered = filtered[filtered["username"] == student_filter]
+    if blooms_filter != "All":
+        filtered = filtered[filtered["blooms_level"].astype(str) == blooms_filter]
+    if quiz_filter != "All":
+        filtered = filtered[filtered["quiz_id"].astype(str) == quiz_filter]
+    if question_type_filter != "All" and "question_type" in filtered:
+        filtered = filtered[filtered["question_type"] == question_type_filter]
+    if cohort_filter != "All" and "cohort" in filtered:
+        filtered = filtered[filtered["cohort"] == cohort_filter]
+    if topic_filter != "All":
+        filtered = filtered[filtered["topic"] == topic_filter]
+    if "timestamp" in filtered.columns and len(date_range) == 2:
+        filtered = filtered[
+            (filtered["timestamp"] >= pd.to_datetime(date_range[0]))
+            & (filtered["timestamp"] <= pd.to_datetime(date_range[1]))
+        ]
+
+    st.markdown("### 📈 Filtered Performance Data")
+    st.dataframe(filtered, use_container_width=True)
+
+    # --- Drill-Down Charts ---
+    st.markdown("#### 🌱 Bloom’s Taxonomy Breakdown")
+    if not filtered.empty:
+        st.bar_chart(filtered.groupby("blooms_level")["correct"].mean())
+    
+    st.markdown("#### 📝 Quiz-by-Quiz Performance")
+    if "quiz_id" in filtered:
+        quiz_summary = filtered.groupby("quiz_id")["correct"].mean()
+        st.line_chart(quiz_summary)
+
+    if "time_spent" in filtered:
+        st.markdown("#### ⏰ Time Spent vs. Score")
+        st.scatter_chart(filtered[["time_spent", "correct"]])
+
+    if "question_type" in filtered:
+        st.markdown("#### ❓ Question Type Breakdown")
+        st.bar_chart(filtered.groupby("question_type")["correct"].mean())
+
+    if "cohort" in filtered:
+        st.markdown("#### 🧑‍🎓 Cohort Comparison")
+        st.bar_chart(filtered.groupby("cohort")["correct"].mean())
+
+    st.markdown("#### 📚 Topic Sequence (First vs. Most Recent Attempt)")
+    topic_first_last = (
+        filtered.sort_values("timestamp")
+        .groupby(["username", "topic"])
+        .agg(first_score=("correct", "first"), last_score=("correct", "last"))
+        .reset_index()
+    )
+    if not topic_first_last.empty:
+        st.dataframe(topic_first_last, use_container_width=True)
+
+    # --- Download Filtered Results ---
+    csv = filtered.to_csv(index=False)
+    st.download_button("Download filtered data CSV", csv, "filtered_results.csv", "text/csv")
+
+# --- Student Performance Summary ---
 with st.expander("📊 Show My Performance Summary", expanded=False):
     try:
         df = pd.read_csv(log_path)
-        user_df = df[(df["username"] == username) & (df["course"] == course)] if user_role != "admin" else df[df["course"] == course]
+        user_df = df[df["username"] == username] if user_role != "admin" else df
         correct_total = user_df["correct"].sum()
         incorrect_total = len(user_df) - correct_total
 
