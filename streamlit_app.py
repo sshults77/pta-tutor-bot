@@ -115,7 +115,7 @@ log_path = Path("grading_log.csv")
 if not log_path.exists():
     pd.DataFrame(columns=[
         "username", "question_id", "question_text", "user_answer",
-        "correct_answer", "correct", "topic", "blooms_level", "timestamp"
+        "correct_answer", "correct", "topic", "blooms_level", "timestamp", "course"
     ]).to_csv(log_path, index=False)
 
 # -------------- CHATBOT SECTION --------------
@@ -248,7 +248,8 @@ if st.button("Generate Quiz"):
                 "correct": 1,
                 "topic": "Knee Anatomy",
                 "blooms_level": "1",
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                "course": course
             },
             {
                 "username": username,
@@ -259,7 +260,8 @@ if st.button("Generate Quiz"):
                 "correct": 0,
                 "topic": "Modalities",
                 "blooms_level": "2",
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                "course": course
             }
         ]
 
@@ -273,13 +275,22 @@ if st.button("Generate Quiz"):
 # -------------- INSTRUCTOR DASHBOARD (admin only) --------------
 if user_role == "admin":
     st.header("📊 Instructor Dashboard: Flagged/Struggling Students")
+
+    # --- Filter by course ---
+    try:
+        df = pd.read_csv(log_path)
+        all_courses = df['course'].dropna().unique().tolist() if 'course' in df.columns else [course]
+        selected_course = st.selectbox("Filter dashboard by course:", sorted(all_courses))
+        df = df[df['course'] == selected_course]
+    except Exception:
+        df = pd.read_csv(log_path)  # fallback
+
     st.markdown("Use the controls below to adjust criteria for flagging students.")
 
     min_score_frac = st.slider("Minimum average score to NOT be flagged (as a fraction)", 0.0, 1.0, 0.7, 0.05)
     min_attempts = st.number_input("Minimum quiz attempts before a student is evaluated", 1, 20, 3, 1)
 
     try:
-        df = pd.read_csv(log_path)
         if df.empty or "username" not in df.columns or df["username"].isnull().all():
             st.info("No student quiz data yet. Flagged students and analytics will appear after quizzes are taken.")
         else:
@@ -293,20 +304,36 @@ if user_role == "admin":
             )
             st.dataframe(summary, use_container_width=True)
 
+            # --- GROUP TRENDS BREAKDOWN BY TOPIC ---
+            st.subheader("📈 Group Trends: Average Score by Topic")
+            if 'topic' in df.columns and not df['topic'].isnull().all():
+                topic_summary = (
+                    df.groupby("topic")["correct"]
+                    .mean()
+                    .reset_index()
+                    .rename(columns={"correct": "Avg Score"})
+                )
+                st.dataframe(topic_summary)
+                fig, ax = plt.subplots()
+                ax.bar(topic_summary['topic'], topic_summary['Avg Score'])
+                ax.set_ylabel("Average Score")
+                ax.set_xlabel("Topic")
+                ax.set_title("Group Average Score by Topic")
+                plt.xticks(rotation=30, ha='right')
+                st.pyplot(fig)
+
             # --- GROUP COMPARISON CONTROLS ---
             selected_students = st.multiselect(
                 "Compare these students:", summary['username'].tolist()
             )
             if selected_students:
                 comp_df = summary[summary['username'].isin(selected_students)]
-                # Bar chart for comparison
                 st.markdown("#### 📊 Comparison of Selected Students")
                 fig, ax = plt.subplots()
                 ax.bar(comp_df['username'], comp_df['Avg Score'])
                 ax.set_ylabel("Average Score")
                 ax.set_title("Comparison of Selected Students")
                 st.pyplot(fig)
-                # Details per student
                 for stu in selected_students:
                     st.markdown(f"##### Performance for `{stu}`")
                     user_rows = df[df['username'] == stu]
@@ -348,7 +375,7 @@ if user_role == "admin":
 with st.expander("📊 Show My Performance Summary", expanded=False):
     try:
         df = pd.read_csv(log_path)
-        user_df = df[df["username"] == username] if user_role != "admin" else df
+        user_df = df[(df["username"] == username) & (df["course"] == course)] if user_role != "admin" else df[df["course"] == course]
         correct_total = user_df["correct"].sum()
         incorrect_total = len(user_df) - correct_total
 
