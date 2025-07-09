@@ -117,15 +117,12 @@ if uploaded_pptx:
 openai_api_key = st.secrets["openai"]["api_key"]
 openai.api_key = openai_api_key
 
-# --- Grading log initialization with robust columns check ---
 log_path = Path("grading_log.csv")
-required_cols = [
-    "username", "quiz_id", "question_id", "question_text", "user_answer",
-    "correct_answer", "correct", "topic", "blooms_level", "question_type",
-    "time_spent", "cohort", "timestamp"
-]
-if not log_path.exists() or pd.read_csv(log_path).empty:
-    pd.DataFrame(columns=required_cols).to_csv(log_path, index=False)
+if not log_path.exists():
+    pd.DataFrame(columns=[
+        "username", "question_id", "question_text", "user_answer",
+        "correct_answer", "correct", "topic", "blooms_level", "timestamp"
+    ]).to_csv(log_path, index=False)
 
 st.header("💬 Chat with the Tutor")
 
@@ -209,6 +206,7 @@ if st.button("Generate Quiz"):
         "5": "Synthesis/Evaluation"
     }
 
+    # ---- UPDATED PROMPT FOR GROUPED ANSWERS/EXPLANATIONS ----
     if bloom_option.startswith("Mixed"):
         blooms_instruction = (
             "Generate 5 NPTE-style multiple-choice questions: "
@@ -226,12 +224,16 @@ if st.button("Generate Quiz"):
     quiz_prompt = (
         f"You are a Physical Therapist Assistant tutor. Based on the following course content, "
         f"{blooms_instruction}"
-        "Do NOT reference slide numbers or slide locations in any questions. Focus only on content."
-        "For each question: "
-        "1) State the Bloom's Taxonomy level, "
-        "2) Present the question in official NPTE exam style, "
-        "3) Provide 4 answer options (A-D), "
-        "4) List the correct answer after each question. "
+        "Do NOT reference slide numbers or slide locations in any questions. Focus only on content.\n"
+        "For each question:\n"
+        "  1) State the Bloom's Taxonomy level\n"
+        "  2) Present the question in official NPTE exam style\n"
+        "  3) Provide 4 answer options (A-D)\n"
+        "Do NOT list the correct answer after each question.\n"
+        "After all questions, create a separate section titled 'Answers & Explanations'.\n"
+        "In that section, for each question, provide:\n"
+        "  - The correct answer letter\n"
+        "  - A brief explanation or rationale for why that answer is correct.\n"
         "Use only the provided material.\n\n"
         + course_content
     )
@@ -249,7 +251,6 @@ if st.button("Generate Quiz"):
         sample_log = [
             {
                 "username": username,
-                "quiz_id": "quiz001",
                 "question_id": "Q001",
                 "question_text": "What is the primary muscle responsible for knee extension?",
                 "user_answer": "A",
@@ -257,14 +258,10 @@ if st.button("Generate Quiz"):
                 "correct": 1,
                 "topic": "Knee Anatomy",
                 "blooms_level": "1",
-                "question_type": "MCQ",
-                "time_spent": 12,
-                "cohort": "2024",
                 "timestamp": datetime.now().isoformat()
             },
             {
                 "username": username,
-                "quiz_id": "quiz001",
                 "question_id": "Q002",
                 "question_text": "Which is a contraindication to ultrasound?",
                 "user_answer": "C",
@@ -272,9 +269,6 @@ if st.button("Generate Quiz"):
                 "correct": 0,
                 "topic": "Modalities",
                 "blooms_level": "2",
-                "question_type": "MCQ",
-                "time_spent": 15,
-                "cohort": "2024",
                 "timestamp": datetime.now().isoformat()
             }
         ]
@@ -294,37 +288,36 @@ if user_role == "admin":
     min_score_frac = st.slider("Minimum score for NOT being flagged (as a fraction)", 0.0, 1.0, 0.7, 0.05)
     min_attempts = st.number_input("Minimum number of quiz attempts to be considered", 1, 20, 3, 1)
 
-    # ---- Robust Data Load ----
     try:
         df = pd.read_csv(log_path)
-        if df.empty or "username" not in df.columns:
+        if df.empty or "username" not in df.columns or df["username"].isnull().all():
             st.info("No student quiz data yet. Flagged students and analytics will appear after quizzes are taken.")
-            st.stop()
-        summary = (
-            df.groupby("username")["correct"]
-            .agg(['mean', 'count'])
-            .reset_index()
-            .rename(columns={'mean': 'score', 'count': 'attempts'})
-        )
-        flagged = summary[(summary['score'] < min_score_frac) & (summary['attempts'] >= min_attempts)]
-        st.markdown("### 🚩 Students Flagged as Struggling")
-        st.dataframe(flagged, use_container_width=True)
+        else:
+            summary = (
+                df.groupby("username")["correct"]
+                .agg(['mean', 'count'])
+                .reset_index()
+                .rename(columns={'mean': 'score', 'count': 'attempts'})
+            )
+            flagged = summary[(summary['score'] < min_score_frac) & (summary['attempts'] >= min_attempts)]
+            st.markdown("### 🚩 Students Flagged as Struggling")
+            st.dataframe(flagged, use_container_width=True)
 
-        drill_user = st.selectbox("Drill down: select a student", [""] + list(flagged['username']))
-        if drill_user:
-            st.markdown(f"#### Details for `{drill_user}`")
-            user_rows = df[df['username'] == drill_user]
-            if 'topic' in user_rows.columns and not user_rows['topic'].isnull().all():
-                st.markdown("**By Topic:**")
-                st.dataframe(user_rows.groupby("topic")["correct"].mean().reset_index().rename(columns={"correct": "Score"}))
-            if 'blooms_level' in user_rows.columns and not user_rows['blooms_level'].isnull().all():
-                st.markdown("**By Bloom's Level:**")
-                st.dataframe(user_rows.groupby("blooms_level")["correct"].mean().reset_index().rename(columns={"correct": "Score"}))
-            st.markdown("**Raw Results:**")
-            st.dataframe(user_rows, use_container_width=True)
+            drill_user = st.selectbox("Drill down: select a student", [""] + list(flagged['username']))
+            if drill_user:
+                st.markdown(f"#### Details for `{drill_user}`")
+                user_rows = df[df['username'] == drill_user]
+                if 'topic' in user_rows.columns and not user_rows['topic'].isnull().all():
+                    st.markdown("**By Topic:**")
+                    st.dataframe(user_rows.groupby("topic")["correct"].mean().reset_index().rename(columns={"correct": "Score"}))
+                if 'blooms_level' in user_rows.columns and not user_rows['blooms_level'].isnull().all():
+                    st.markdown("**By Bloom's Level:**")
+                    st.dataframe(user_rows.groupby("blooms_level")["correct"].mean().reset_index().rename(columns={"correct": "Score"}))
+                st.markdown("**Raw Results:**")
+                st.dataframe(user_rows, use_container_width=True)
 
-        csv = flagged.to_csv(index=False)
-        st.download_button("Download flagged report CSV", csv, "flagged_students.csv", "text/csv")
+            csv = flagged.to_csv(index=False)
+            st.download_button("Download flagged report CSV", csv, "flagged_students.csv", "text/csv")
     except Exception as e:
         st.error(f"Admin dashboard error: {e}")
 
@@ -332,9 +325,6 @@ if user_role == "admin":
 with st.expander("📊 Show My Performance Summary", expanded=False):
     try:
         df = pd.read_csv(log_path)
-        if df.empty or "username" not in df.columns:
-            st.info("No student quiz data yet. Your dashboard will appear after you take a quiz.")
-            st.stop()
         user_df = df[df["username"] == username] if user_role != "admin" else df
         correct_total = user_df["correct"].sum()
         incorrect_total = len(user_df) - correct_total
