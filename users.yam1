@@ -1,24 +1,39 @@
 credentials:
   usernames:
     student1:
-      email: alice@example.com
-      name: Alice Example
-      password: "$2b$12$8TgoZ5KLjlbYJLKf0bq6TeLEKM2lAjDyvHntr.x2ZnBqAbX1CGWn2"
+      email: kbooth@south.edu
+      name: kbooth
+      password: "South1@1977"
       role: student
     student2:
-      email: bob@example.com
-      name: Bob Example
-      password: "$2b$12$dfqOZNKUm67O8y8gktQG8OYq8xO67i54i6GXgFV5QbfO5EyaV6ShK"
+      email: tallen@south.edu
+      name: tallen@south.edu
+      password: "South2@1977"
+      role: student
+   student3:
+      email: sshults@south.edu
+      name: sshults
+      password: "South3@1977"
       role: student
     admin1:
-      email: admin@example.com
-      name: Dr. Admin
-      password: "$2b$12$glNcZ82f6r9gZW4lqVUM4egUS7LCyDJJUJP3UoZ0A1nCMz3lGJpgK"
+      email: kbooth@south.edu
+      name: kboothadmin
+      password: "Southadmin1@1977"
+      role: admin
+     admin2:
+      email: tallen@south.edu
+      name: tallenadmin
+      password: "Southadmin2@1977"
+      role: admin
+     admin3:
+      email: sshults@south.edu
+      name: sshultsadmin
+      password: "Southadmin3@1977"
       role: admin
     janedoe:
       email: jane@example.com
       name: Jane Doe
-      password: "$2b$12$6EUTfvtmvVLwnwJsK0Xpj.Jo3LDgfjRBcBQgObnFiEiYyEqZHObZ6"
+      password: "Southadmin3@1977"
       role: student
 cookie:
   expiry_days: 3
