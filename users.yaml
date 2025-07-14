@@ -3,37 +3,37 @@ credentials:
     student1:
       email: kbooth@example.com
       name: kbooth
-      password: "South1@1977"
+      password: "$2b$12$k7LS2Le8wlW7Zn8po1B6C.EDCkFppQ3QnnsYfA12WQtO8aEjnbP5i"  # South1@1977
       role: student
     student2:
       email: tallen@example.com
       name: tallen@south.edu
-      password: "South2@1977"
+      password: "$2b$12$kgf9HuqYvEm3z37bNl6iTuBsmJtoA5Tc3e3pVkmQru9UBlzMIj/qK"  # South2@1977
       role: student
     student3:
       email: sshults@example.com
       name: sshults
-      password: "South3@1977"
+      password: "$2b$12$Yv5BId6ChdMu8fCw3k3hR.0Ynck3lPB6BVnZPi27r1ppw/rCk2WxC"  # South3@1977
       role: student
     admin1:
       email: kbooth@example.com
       name: kboothadmin
-      password: "Southadmin1@1977"
+      password: "$2b$12$jO8FDQQekyM60GIoJ8ok..fxyYw8v9e8/N9TSczmS5A9VBL2bQfT."  # Southadmin1@1977
       role: admin
     admin2:
       email: tallen@example.com
       name: tallenadmin
-      password: "Southadmin2@1977"
+      password: "$2b$12$hSnxE16K1Hno4OGWkPQdCeMT7FWV8paodLD5U5lrl4G1USrF8EnSa"  # Southadmin2@1977
       role: admin
     admin3:
       email: sshults@example.com
       name: sshultsadmin
-      password: "Southadmin3@1977"
+      password: "$2b$12$BUzztKk5F0l9J2LWcnNfFuE/LiYmi4Jp0QF9knV1HKZvUkDsIb9ve"  # Southadmin3@1977
       role: admin
     janedoe:
       email: jane@example.com
       name: Jane Doe
-      password: "Southadmin3@1977"
+      password: "$2b$12$BUzztKk5F0l9J2LWcnNfFuE/LiYmi4Jp0QF9knV1HKZvUkDsIb9ve"  # Southadmin3@1977
       role: student
 cookie:
   expiry_days: 3
