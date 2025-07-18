@@ -1,6 +1,3 @@
-# ========================
-# PTA Tutor Chatbot App
-# ========================
 import streamlit as st
 import streamlit_authenticator as stauth
 import yaml
@@ -13,12 +10,9 @@ from datetime import datetime
 from pathlib import Path
 from pptx import Presentation
 import openai
-import re
+import json
 
-# ========================
-# --- Authentication & Config ---
-# ========================
-
+# --- Load users from YAML ---
 with open('users.yaml') as file:
     config = yaml.load(file, Loader=SafeLoader)
 
@@ -29,10 +23,11 @@ authenticator = stauth.Authenticate(
     config['cookie']['expiry_days']
 )
 
-# Login
+# --- LOGIN ---
 login_result = authenticator.login(location='main')
 if login_result is None:
     st.stop()
+
 if isinstance(login_result, tuple):
     if len(login_result) == 2:
         name, authentication_status = login_result
@@ -45,30 +40,33 @@ if isinstance(login_result, tuple):
 else:
     st.error("Unexpected login return type.")
     st.stop()
+
 if authentication_status is False:
     st.error("Username/password is incorrect")
     st.stop()
 elif authentication_status is None:
     st.warning("Please enter your username and password")
     st.stop()
+
+# Get user role for instructor dashboard
 user_role = config['credentials']['usernames'][username]['role']
+
 st.sidebar.write(f"Logged in as: **{name}** ({username})")
 st.success("Login success! You now see the main app.")
 
-# ========================
-# --- Course Material Loader ---
-# ========================
+# --- Main App ---
 st.title("📚 PTA Tutor Chatbot with Quiz & Performance Tracker")
 
+# --- Dynamic course discovery
 COURSE_MATERIALS_ROOT = "course_materials"
 courses = [d for d in os.listdir(COURSE_MATERIALS_ROOT)
            if os.path.isdir(os.path.join(COURSE_MATERIALS_ROOT, d))]
 if not courses:
     courses = ["PTA_1010"]  # fallback
+
 course = st.selectbox("Select your course:", sorted(courses))
 course_folder = os.path.join(COURSE_MATERIALS_ROOT, course)
 
-# --- PDF Loader ---
 def load_pdf_text(folder):
     text = ""
     if os.path.exists(folder):
@@ -82,7 +80,8 @@ def load_pdf_text(folder):
                             text += page_text
     return text
 
-# --- TXT Loader ---
+pdf_text = load_pdf_text(course_folder)[:3000]
+
 def load_txt_content(folder):
     txt_file = None
     if os.path.exists(folder):
@@ -95,7 +94,8 @@ def load_txt_content(folder):
             return f.read()
     return ""
 
-# --- PPTX Notes Extractor ---
+txt_text = load_txt_content(course_folder)[:3000]
+
 def extract_notes_from_uploaded_pptx(uploaded_file):
     prs = Presentation(uploaded_file)
     all_notes = []
@@ -107,7 +107,6 @@ def extract_notes_from_uploaded_pptx(uploaded_file):
         all_notes.append(f"{slide_title}:\n{notes_text}\n")
     return "\n".join(all_notes)
 
-# --- Sidebar PowerPoint Upload ---
 st.sidebar.header("Optional: Upload PowerPoint for Chatbot Content")
 uploaded_pptx = st.sidebar.file_uploader("Upload a PowerPoint (.pptx)", type="pptx")
 pptx_text = ""
@@ -115,68 +114,17 @@ if uploaded_pptx:
     pptx_text = extract_notes_from_uploaded_pptx(uploaded_pptx)
     st.sidebar.success("PowerPoint notes extracted. Chatbot will use these as course content.")
 
-pdf_text = load_pdf_text(course_folder)[:3000]
-txt_text = load_txt_content(course_folder)[:3000]
-
-# ========================
-# --- OpenAI Key Setup ---
-# ========================
+# --- OpenAI setup (NO OpenAI object needed) ---
 openai_api_key = st.secrets["openai"]["api_key"]
 openai.api_key = openai_api_key
 
-# ========================
-# --- Grading Log Setup ---
-# ========================
 log_path = Path("grading_log.csv")
 if not log_path.exists():
     pd.DataFrame(columns=[
         "username", "question_id", "question_text", "user_answer",
-        "correct_answer", "correct", "topic", "blooms_level", "timestamp"
+        "correct_answer", "correct", "topic", "blooms_level", "confidence", "timestamp"
     ]).to_csv(log_path, index=False)
 
-# ========================
-# --- Topic Extraction Utility ---
-# ========================
-def extract_topics_from_text(text):
-    """
-    Extract likely topic headers from raw text.
-    Looks for lines that appear to be section titles (numbered, all caps, markdown-style).
-    """
-    topics = set()
-    for line in text.splitlines():
-        line = line.strip()
-        # Various patterns for section headers/topics
-        if (re.match(r"^[IVXLC]+\.", line) or            # Roman numerals
-            re.match(r"^\d+\.", line) or                 # Numbers: 1., 2.
-            re.match(r"^\d+\s", line) or                 # Numbers: 1 Introduction
-            re.match(r"^#+\s", line) or                  # Markdown headings
-            (line.isupper() and len(line) > 4)):
-            if len(line) > 3 and len(line) < 60:
-                topics.add(line)
-    return sorted(topics)
-
-# ========================
-# --- Topic Detection for Current Content ---
-# ========================
-topic_source_text = ""
-if pptx_text:
-    topic_source_text = pptx_text
-elif txt_text:
-    topic_source_text = txt_text
-else:
-    topic_source_text = pdf_text
-
-autogenerated_topics = extract_topics_from_text(topic_source_text)
-selected_topics = []
-if autogenerated_topics:
-    selected_topics = st.multiselect(
-        "Choose specific topics to focus your quiz:", autogenerated_topics)
-else:
-    st.info("No clear topics detected—quiz will use the full content.")
-
-# ========================
-# --- Chatbot Section ---
-# ========================
 st.header("💬 Chat with the Tutor")
 
 if "messages" not in st.session_state:
@@ -190,6 +138,7 @@ if prompt := st.chat_input("Ask a question about your course..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
+
     if pptx_text:
         course_content = pptx_text
         content_source = "PowerPoint notes"
@@ -199,6 +148,7 @@ if prompt := st.chat_input("Ask a question about your course..."):
     else:
         course_content = pdf_text
         content_source = "PDF"
+
     st.info(f"Chatbot is using: {content_source}")
 
     system_prompt = {
@@ -226,9 +176,7 @@ If the question is unrelated to the material, respond: 'I'm sorry, I can only he
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
 
-# ========================
-# --- Quiz Generator ---
-# ========================
+# --- Quiz Generator with Blooms Levels 1–5 + Confidence Slider ---
 st.header("📝 Quiz Generator")
 
 bloom_option = st.selectbox(
@@ -258,14 +206,6 @@ if st.button("Generate Quiz"):
         "4": "Analysis",
         "5": "Synthesis/Evaluation"
     }
-    # Insert topic selection into prompt
-    if selected_topics:
-        selected_topics_text = (
-            "Focus ONLY on these topics when generating questions: "
-            + "; ".join(selected_topics) + "\n"
-        )
-    else:
-        selected_topics_text = "Use the full course content.\n"
 
     if bloom_option.startswith("Mixed"):
         blooms_instruction = (
@@ -281,16 +221,23 @@ if st.button("Generate Quiz"):
             f"Generate 5 NPTE-style multiple-choice questions at Bloom's Level {level} ({level_name}). "
         )
 
+    # Use JSON for parsing (strongly recommended!)
     quiz_prompt = (
-        f"You are a Physical Therapist Assistant tutor. {selected_topics_text}"
+        f"You are a Physical Therapist Assistant tutor. Based on the following course content, "
         f"{blooms_instruction}"
         "Do NOT reference slide numbers or slide locations in any questions. Focus only on content."
-        "For each question: "
-        "1) State the Bloom's Taxonomy level, "
-        "2) Present the question in official NPTE exam style, "
-        "3) Provide 4 answer options (A-D), "
-        "4) List the correct answer after each question. "
-        "Use only the provided material.\n\n"
+        "For each question, output a JSON object in the following format:\n"
+        "{{"
+        '"id": "Q001",'
+        '"question": "...",'
+        '"options": ["A. ...", "B. ...", "C. ...", "D. ..."],'
+        '"correct": "A",'
+        '"explanation": "...",'
+        '"topic": "...",'
+        '"blooms_level": "1"'
+        "}}\n"
+        "Output a list of 5 such questions as a JSON array. Only output JSON, nothing else."
+        "\n\n"
         + course_content
     )
 
@@ -299,50 +246,97 @@ if st.button("Generate Quiz"):
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": quiz_prompt}]
         )
-        quiz_text = response.choices[0].message.content
-        st.markdown("### ✏️ Quiz Output")
-        st.markdown(quiz_text)
+        quiz_json = response.choices[0].message.content
 
-        # Sample grading: replace with real grading in production
-        sample_log = [
-            {
-                "username": username,
-                "question_id": "Q001",
-                "question_text": "What is the primary muscle responsible for knee extension?",
-                "user_answer": "A",
-                "correct_answer": "A",
-                "correct": 1,
-                "topic": "Knee Anatomy",
-                "blooms_level": "1",
-                "timestamp": datetime.now().isoformat()
-            },
-            {
-                "username": username,
-                "question_id": "Q002",
-                "question_text": "Which is a contraindication to ultrasound?",
-                "user_answer": "C",
-                "correct_answer": "A",
-                "correct": 0,
-                "topic": "Modalities",
-                "blooms_level": "2",
-                "timestamp": datetime.now().isoformat()
-            }
-        ]
-        df = pd.read_csv(log_path)
-        df = pd.concat([df, pd.DataFrame(sample_log)], ignore_index=True)
-        df.to_csv(log_path, index=False)
+        # Try to parse the JSON block
+        try:
+            questions = json.loads(quiz_json)
+        except Exception:
+            st.error("Could not parse generated quiz! Showing raw output.")
+            st.markdown(quiz_json)
+            questions = []
+
+        if questions:
+            st.session_state['quiz_questions'] = questions
+            st.session_state['quiz_idx'] = 0
+            st.session_state['quiz_answers'] = []
+            st.success("Quiz ready! Click below to start.")
+        else:
+            st.session_state['quiz_questions'] = []
+            st.session_state['quiz_idx'] = 0
 
     except Exception as e:
         st.error(f"❌ Failed to generate quiz: {str(e)}")
 
-# ========================
-# --- Instructor Dashboard ---
-# ========================
+# --- Quiz Taking Flow: One question at a time with confidence tracking ---
+if "quiz_questions" in st.session_state and st.session_state["quiz_questions"]:
+    idx = st.session_state.get("quiz_idx", 0)
+    questions = st.session_state["quiz_questions"]
+
+    if idx < len(questions):
+        q = questions[idx]
+        st.subheader(f"Question {idx+1}:")
+        st.markdown(q["question"])
+        user_answer = st.radio("Choose your answer:", q["options"], key=f"q_ans_{idx}")
+        confidence = st.slider("How confident are you in your answer?", 1, 5, 3, key=f"conf_{idx}")
+
+        if st.button("Submit Answer", key=f"submit_{idx}"):
+            # Record answer
+            log_entry = {
+                "username": username,
+                "question_id": q["id"],
+                "question_text": q["question"],
+                "user_answer": user_answer[0],  # "A. ...", just take "A"
+                "correct_answer": q["correct"],
+                "correct": int(user_answer[0] == q["correct"]),
+                "topic": q["topic"],
+                "blooms_level": q["blooms_level"],
+                "confidence": confidence,
+                "timestamp": datetime.now().isoformat()
+            }
+            # Append to grading log
+            df = pd.read_csv(log_path)
+            df = pd.concat([df, pd.DataFrame([log_entry])], ignore_index=True)
+            df.to_csv(log_path, index=False)
+            # Save in session_state for feedback display
+            st.session_state['quiz_answers'].append({
+                "your_answer": user_answer[0],
+                "correct": q["correct"],
+                "explanation": q.get("explanation", ""),
+                "was_correct": user_answer[0] == q["correct"],
+                "confidence": confidence,
+                "question": q["question"]
+            })
+            # Go to next question
+            st.session_state["quiz_idx"] += 1
+            st.experimental_rerun()
+
+    else:
+        st.success("Quiz complete! See your answers and explanations below:")
+        for i, ans in enumerate(st.session_state['quiz_answers']):
+            st.markdown(f"**Question {i+1}:** {ans['question']}")
+            st.markdown(f"- Your answer: {ans['your_answer']}")
+            st.markdown(f"- Correct answer: {ans['correct']}")
+            st.markdown(f"- Correct? {'✅' if ans['was_correct'] else '❌'}")
+            st.markdown(f"- Confidence: {ans['confidence']}/5")
+            if ans["explanation"]:
+                st.markdown(f"**Explanation:** {ans['explanation']}")
+            st.markdown("---")
+        # Clear quiz after review
+        if st.button("Finish Quiz & Clear"):
+            del st.session_state["quiz_questions"]
+            del st.session_state["quiz_answers"]
+            del st.session_state["quiz_idx"]
+            st.experimental_rerun()
+
+# --- Instructor Dashboard (admin only) ---
 if user_role == "admin":
     st.header("📊 Instructor Dashboard: Flagged/Struggling Students")
     st.markdown("Use controls below to adjust the criteria for flagging students.")
+
     min_score_frac = st.slider("Minimum score for NOT being flagged (as a fraction)", 0.0, 1.0, 0.7, 0.05)
     min_attempts = st.number_input("Minimum number of quiz attempts to be considered", 1, 20, 3, 1)
+
     try:
         df = pd.read_csv(log_path)
         if df.empty or "username" not in df.columns or df["username"].isnull().all():
@@ -376,24 +370,30 @@ if user_role == "admin":
     except Exception as e:
         st.error(f"Admin dashboard error: {e}")
 
-# ========================
-# --- Student Performance Summary ---
-# ========================
+# --- Student Performance Summary (with confidence) ---
 with st.expander("📊 Show My Performance Summary", expanded=False):
     try:
         df = pd.read_csv(log_path)
         user_df = df[df["username"] == username] if user_role != "admin" else df
         correct_total = user_df["correct"].sum()
         incorrect_total = len(user_df) - correct_total
+
         st.write(f"Total Questions Answered: {len(user_df)}")
         st.write(f"✅ Correct: {correct_total}")
         st.write(f"❌ Incorrect: {incorrect_total}")
+
         if not user_df.empty:
             fig, ax = plt.subplots()
             ax.bar(["Correct", "Incorrect"], [correct_total, incorrect_total])
             ax.set_ylabel("Number of Responses")
             ax.set_title("Student Performance")
             st.pyplot(fig)
+
+            if "confidence" in user_df.columns:
+                st.write("**Accuracy by Confidence Level:**")
+                conf_summary = user_df.groupby("confidence")["correct"].mean()
+                st.bar_chart(conf_summary)
+
     except Exception as e:
         st.warning("⚠️ No grading data available or error reading log.")
         st.text(str(e))
