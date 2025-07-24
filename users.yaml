@@ -1,40 +1,35 @@
 credentials:
   usernames:
-    student1:
+    kbooth:
       email: kbooth@example.com
       name: kbooth
-      password: "$2b$12$k7LS2Le8wlW7Zn8po1B6C.EDCkFppQ3QnnsYfA12WQtO8aEjnbP5i"  # South1@1977
+      password: "$2b$12$KIXQqSZ5pK43t0hTi8TpsuyQ1xiHtmHb6uyl8wI0xZzxX3h8KWTkG"
       role: student
-    student2:
-      email: tallen@example.com
-      name: tallen@south.edu
-      password: "$2b$12$kgf9HuqYvEm3z37bNl6iTuBsmJtoA5Tc3e3pVkmQru9UBlzMIj/qK"  # South2@1977
-      role: student
-    student3:
+    kboothadmin:
+      email: kboothadmin@example.com
+      name: kboothadmin
+      password: "$2b$12$KIXQqSZ5pK43t0hTi8TpsuyQ1xiHtmHb6uyl8wI0xZzxX3h8KWTkG"
+      role: admin
+    sshults:
       email: sshults@example.com
       name: sshults
-      password: "$2b$12$Yv5BId6ChdMu8fCw3k3hR.0Ynck3lPB6BVnZPi27r1ppw/rCk2WxC"  # South3@1977
+      password: "$2b$12$KIXQqSZ5pK43t0hTi8TpsuyQ1xiHtmHb6uyl8wI0xZzxX3h8KWTkG"
       role: student
-    admin1:
-      email: kbooth@example.com
-      name: kboothadmin
-      password: "$2b$12$jO8FDQQekyM60GIoJ8ok..fxyYw8v9e8/N9TSczmS5A9VBL2bQfT."  # Southadmin1@1977
-      role: admin
-    admin2:
-      email: tallen@example.com
-      name: tallenadmin
-      password: "$2b$12$hSnxE16K1Hno4OGWkPQdCeMT7FWV8paodLD5U5lrl4G1USrF8EnSa"  # Southadmin2@1977
-      role: admin
-    admin3:
-      email: sshults@example.com
+    sshultsadmin:
+      email: sshultsadmin@example.com
       name: sshultsadmin
-      password: "$2b$12$BUzztKk5F0l9J2LWcnNfFuE/LiYmi4Jp0QF9knV1HKZvUkDsIb9ve"  # Southadmin3@1977
+      password: "$2b$12$KIXQqSZ5pK43t0hTi8TpsuyQ1xiHtmHb6uyl8wI0xZzxX3h8KWTkG"
       role: admin
-    janedoe:
-      email: jane@example.com
-      name: Jane Doe
-      password: "$2b$12$BUzztKk5F0l9J2LWcnNfFuE/LiYmi4Jp0QF9knV1HKZvUkDsIb9ve"  # Southadmin3@1977
+    tallen:
+      email: tallen@example.com
+      name: tallen
+      password: "$2b$12$KIXQqSZ5pK43t0hTi8TpsuyQ1xiHtmHb6uyl8wI0xZzxX3h8KWTkG"
       role: student
+    tallenadmin:
+      email: tallenadmin@example.com
+      name: tallenadmin
+      password: "$2b$12$KIXQqSZ5pK43t0hTi8TpsuyQ1xiHtmHb6uyl8wI0xZzxX3h8KWTkG"
+      role: admin
 cookie:
   expiry_days: 3
   key: some_signature_key
