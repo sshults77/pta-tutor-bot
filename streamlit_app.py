@@ -13,33 +13,59 @@ import openai
 import json
 
 # --- Load users from YAML ---
-with open('users.yaml') as file:
-    config = yaml.load(file, Loader=SafeLoader)
+try:
+    with open('users.yaml') as file:
+        config = yaml.load(file, Loader=SafeLoader)
+    st.write("✅ Loaded users.yaml successfully!")
+except Exception as e:
+    st.error(f"❌ Error loading users.yaml: {e}")
+    st.stop()
 
-authenticator = stauth.Authenticate(
-    config['credentials'],
-    config['cookie']['name'],
-    config['cookie']['key'],
-    config['cookie']['expiry_days']
-)
+# Debug: show the loaded usernames and roles
+if "credentials" in config and "usernames" in config["credentials"]:
+    st.write("DEBUG: Usernames found in YAML:", list(config["credentials"]["usernames"].keys()))
+    for uname, details in config["credentials"]["usernames"].items():
+        st.write(f"DEBUG: {uname} - role: {details.get('role')}, email: {details.get('email')}")
+else:
+    st.error("❌ Could not find 'credentials.usernames' in config!")
+    st.stop()
+
+try:
+    authenticator = stauth.Authenticate(
+        config['credentials'],
+        config['cookie']['name'],
+        config['cookie']['key'],
+        config['cookie']['expiry_days']
+    )
+except Exception as e:
+    st.error(f"❌ Error initializing authenticator: {e}")
+    st.stop()
 
 # --- LOGIN ---
 login_result = authenticator.login(location='main')
+st.write("DEBUG: Raw login_result =", login_result)
+
 if login_result is None:
+    st.warning("DEBUG: login_result is None, stopping app")
     st.stop()
 
+# Handle possible login result shapes
 if isinstance(login_result, tuple):
+    st.write("DEBUG: login_result as tuple:", login_result)
     if len(login_result) == 2:
         name, authentication_status = login_result
         username = getattr(authenticator, "username", None)
     elif len(login_result) == 3:
         name, authentication_status, username = login_result
     else:
-        st.error("Unknown login return value structure.")
+        st.error(f"Unknown login return value structure: {login_result}")
         st.stop()
 else:
-    st.error("Unexpected login return type.")
+    st.error(f"Unexpected login return type: {type(login_result)} Value: {login_result}")
     st.stop()
+
+st.write("DEBUG: Login as:", username)
+st.write("DEBUG: authentication_status:", authentication_status)
 
 if authentication_status is False:
     st.error("Username/password is incorrect")
@@ -49,7 +75,12 @@ elif authentication_status is None:
     st.stop()
 
 # Get user role for instructor dashboard
-user_role = config['credentials']['usernames'][username]['role']
+try:
+    user_role = config['credentials']['usernames'][username]['role']
+    st.write(f"DEBUG: User role is {user_role}")
+except Exception as e:
+    st.error(f"❌ Could not determine user role: {e}")
+    st.stop()
 
 st.sidebar.write(f"Logged in as: **{name}** ({username})")
 st.success("Login success! You now see the main app.")
@@ -59,13 +90,19 @@ st.title("📚 PTA Tutor Chatbot with Quiz & Performance Tracker")
 
 # --- Dynamic course discovery
 COURSE_MATERIALS_ROOT = "course_materials"
-courses = [d for d in os.listdir(COURSE_MATERIALS_ROOT)
-           if os.path.isdir(os.path.join(COURSE_MATERIALS_ROOT, d))]
+try:
+    courses = [d for d in os.listdir(COURSE_MATERIALS_ROOT)
+               if os.path.isdir(os.path.join(COURSE_MATERIALS_ROOT, d))]
+    st.write("DEBUG: Courses found:", courses)
+except Exception as e:
+    st.error(f"❌ Error discovering courses: {e}")
+    courses = []
 if not courses:
     courses = ["PTA_1010"]  # fallback
 
 course = st.selectbox("Select your course:", sorted(courses))
 course_folder = os.path.join(COURSE_MATERIALS_ROOT, course)
+st.write("DEBUG: course_folder set to:", course_folder)
 
 def load_pdf_text(folder):
     text = ""
@@ -73,14 +110,18 @@ def load_pdf_text(folder):
         for filename in os.listdir(folder):
             if filename.endswith(".pdf"):
                 file_path = os.path.join(folder, filename)
-                with pdfplumber.open(file_path) as pdf:
-                    for page in pdf.pages:
-                        page_text = page.extract_text()
-                        if page_text:
-                            text += page_text
+                try:
+                    with pdfplumber.open(file_path) as pdf:
+                        for page in pdf.pages:
+                            page_text = page.extract_text()
+                            if page_text:
+                                text += page_text
+                except Exception as e:
+                    st.error(f"Error reading PDF {filename}: {e}")
     return text
 
 pdf_text = load_pdf_text(course_folder)[:3000]
+st.write("DEBUG: Length of loaded PDF text:", len(pdf_text))
 
 def load_txt_content(folder):
     txt_file = None
@@ -90,22 +131,33 @@ def load_txt_content(folder):
                 txt_file = os.path.join(folder, filename)
                 break
     if txt_file:
-        with open(txt_file, "r", encoding="utf-8") as f:
-            return f.read()
+        try:
+            with open(txt_file, "r", encoding="utf-8") as f:
+                txt = f.read()
+            st.write("DEBUG: Loaded TXT file:", txt_file)
+            return txt
+        except Exception as e:
+            st.error(f"Error reading TXT file: {e}")
     return ""
 
 txt_text = load_txt_content(course_folder)[:3000]
+st.write("DEBUG: Length of loaded TXT text:", len(txt_text))
 
 def extract_notes_from_uploaded_pptx(uploaded_file):
-    prs = Presentation(uploaded_file)
-    all_notes = []
-    for i, slide in enumerate(prs.slides):
-        slide_title = slide.shapes.title.text if slide.shapes.title else f"Slide {i+1}"
-        notes_text = ""
-        if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
-            notes_text = slide.notes_slide.notes_text_frame.text.strip()
-        all_notes.append(f"{slide_title}:\n{notes_text}\n")
-    return "\n".join(all_notes)
+    try:
+        prs = Presentation(uploaded_file)
+        all_notes = []
+        for i, slide in enumerate(prs.slides):
+            slide_title = slide.shapes.title.text if slide.shapes.title else f"Slide {i+1}"
+            notes_text = ""
+            if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
+                notes_text = slide.notes_slide.notes_text_frame.text.strip()
+            all_notes.append(f"{slide_title}:\n{notes_text}\n")
+        st.write("DEBUG: Extracted notes from PPTX")
+        return "\n".join(all_notes)
+    except Exception as e:
+        st.error(f"Error extracting notes from PowerPoint: {e}")
+        return ""
 
 st.sidebar.header("Optional: Upload PowerPoint for Chatbot Content")
 uploaded_pptx = st.sidebar.file_uploader("Upload a PowerPoint (.pptx)", type="pptx")
@@ -114,9 +166,13 @@ if uploaded_pptx:
     pptx_text = extract_notes_from_uploaded_pptx(uploaded_pptx)
     st.sidebar.success("PowerPoint notes extracted. Chatbot will use these as course content.")
 
-# --- OpenAI setup (NO OpenAI object needed) ---
-openai_api_key = st.secrets["openai"]["api_key"]
-openai.api_key = openai_api_key
+# --- OpenAI setup ---
+try:
+    openai_api_key = st.secrets["openai"]["api_key"]
+    openai.api_key = openai_api_key
+    st.write("DEBUG: OpenAI API key loaded")
+except Exception as e:
+    st.error(f"Error loading OpenAI API key: {e}")
 
 log_path = Path("grading_log.csv")
 if not log_path.exists():
@@ -124,6 +180,7 @@ if not log_path.exists():
         "username", "question_id", "question_text", "user_answer",
         "correct_answer", "correct", "topic", "blooms_level", "confidence", "timestamp"
     ]).to_csv(log_path, index=False)
+    st.write("DEBUG: Created new grading_log.csv")
 
 st.header("💬 Chat with the Tutor")
 
@@ -150,6 +207,7 @@ if prompt := st.chat_input("Ask a question about your course..."):
         content_source = "PDF"
 
     st.info(f"Chatbot is using: {content_source}")
+    st.write("DEBUG: Using content_source:", content_source)
 
     system_prompt = {
         "role": "system",
@@ -170,6 +228,7 @@ If the question is unrelated to the material, respond: 'I'm sorry, I can only he
             messages=[system_prompt] + st.session_state.messages
         )
         reply = response.choices[0].message.content
+        st.write("DEBUG: Chatbot reply:", reply)
         with st.chat_message("assistant"):
             st.markdown(reply)
         st.session_state.messages.append({"role": "assistant", "content": reply})
@@ -247,12 +306,13 @@ if st.button("Generate Quiz"):
             messages=[{"role": "user", "content": quiz_prompt}]
         )
         quiz_json = response.choices[0].message.content
+        st.write("DEBUG: Raw quiz JSON output:", quiz_json[:400])
 
         # Try to parse the JSON block
         try:
             questions = json.loads(quiz_json)
-        except Exception:
-            st.error("Could not parse generated quiz! Showing raw output.")
+        except Exception as e:
+            st.error(f"Could not parse generated quiz! Showing raw output. Error: {e}")
             st.markdown(quiz_json)
             questions = []
 
@@ -272,6 +332,7 @@ if st.button("Generate Quiz"):
 if "quiz_questions" in st.session_state and st.session_state["quiz_questions"]:
     idx = st.session_state.get("quiz_idx", 0)
     questions = st.session_state["quiz_questions"]
+    st.write("DEBUG: Quiz idx:", idx, "Questions loaded:", len(questions))
 
     if idx < len(questions):
         q = questions[idx]
@@ -294,6 +355,7 @@ if "quiz_questions" in st.session_state and st.session_state["quiz_questions"]:
                 "confidence": confidence,
                 "timestamp": datetime.now().isoformat()
             }
+            st.write("DEBUG: Logging entry:", log_entry)
             # Append to grading log
             df = pd.read_csv(log_path)
             df = pd.concat([df, pd.DataFrame([log_entry])], ignore_index=True)
@@ -339,6 +401,7 @@ if user_role == "admin":
 
     try:
         df = pd.read_csv(log_path)
+        st.write("DEBUG: Data loaded for instructor dashboard. N rows:", len(df))
         if df.empty or "username" not in df.columns or df["username"].isnull().all():
             st.info("No student quiz data yet. Flagged students and analytics will appear after quizzes are taken.")
         else:
@@ -375,6 +438,7 @@ with st.expander("📊 Show My Performance Summary", expanded=False):
     try:
         df = pd.read_csv(log_path)
         user_df = df[df["username"] == username] if user_role != "admin" else df
+        st.write("DEBUG: Loaded user_df for performance summary, N rows:", len(user_df))
         correct_total = user_df["correct"].sum()
         incorrect_total = len(user_df) - correct_total
 
