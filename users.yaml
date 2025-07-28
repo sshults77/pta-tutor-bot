@@ -3,32 +3,32 @@ credentials:
     kbooth:
       email: kbooth@example.com
       name: kbooth
-      password: "$2b$12$abc123...yourhashhere"
+      password: "$2b$12$3Yaa5nQNBupXZFDhkQKLSeHu1XO49i8eYGWxk1xtQ1sB/i/Abp8/q"
       role: student
     kboothadmin:
       email: kboothadmin@example.com
       name: kboothadmin
-      password: "$2b$12$abc123...yourhashhere"
+      password: "$2b$12$3Yaa5nQNBupXZFDhkQKLSeHu1XO49i8eYGWxk1xtQ1sB/i/Abp8/q"
       role: admin
     sshults:
       email: sshults@example.com
       name: sshults
-      password: "$2b$12$abc123...yourhashhere"
+      password: "$2b$12$3Yaa5nQNBupXZFDhkQKLSeHu1XO49i8eYGWxk1xtQ1sB/i/Abp8/q"
       role: student
     sshultsadmin:
       email: sshultsadmin@example.com
       name: sshultsadmin
-      password: "$2b$12$abc123...yourhashhere"
+      password: "$2b$12$3Yaa5nQNBupXZFDhkQKLSeHu1XO49i8eYGWxk1xtQ1sB/i/Abp8/q"
       role: admin
     tallen:
       email: tallen@example.com
       name: tallen
-      password: "$2b$12$abc123...yourhashhere"
+      password: "$2b$12$3Yaa5nQNBupXZFDhkQKLSeHu1XO49i8eYGWxk1xtQ1sB/i/Abp8/q"
       role: student
     tallenadmin:
       email: tallenadmin@example.com
       name: tallenadmin
-      password: "$2b$12$abc123...yourhashhere"
+      password: "$2b$12$3Yaa5nQNBupXZFDhkQKLSeHu1XO49i8eYGWxk1xtQ1sB/i/Abp8/q"
       role: admin
 cookie:
   expiry_days: 3
@@ -36,3 +36,4 @@ cookie:
   name: pta_tutor_bot_cookie
 preauthorized:
   emails: []
+
