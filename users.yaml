@@ -3,12 +3,36 @@ credentials:
     kbooth:
       email: kbooth@example.com
       name: kbooth
-      password: "$2b$12$AJxVr6xJypxlaFBUZzDLueY.MIc5HUK.gC1CFOiZX0OTWq8Zco6/W"
+      password: "$2b$12$abc123...yourhashhere"
       role: student
+    kboothadmin:
+      email: kboothadmin@example.com
+      name: kboothadmin
+      password: "$2b$12$abc123...yourhashhere"
+      role: admin
+    sshults:
+      email: sshults@example.com
+      name: sshults
+      password: "$2b$12$abc123...yourhashhere"
+      role: student
+    sshultsadmin:
+      email: sshultsadmin@example.com
+      name: sshultsadmin
+      password: "$2b$12$abc123...yourhashhere"
+      role: admin
+    tallen:
+      email: tallen@example.com
+      name: tallen
+      password: "$2b$12$abc123...yourhashhere"
+      role: student
+    tallenadmin:
+      email: tallenadmin@example.com
+      name: tallenadmin
+      password: "$2b$12$abc123...yourhashhere"
+      role: admin
 cookie:
   expiry_days: 3
   key: some_signature_key
   name: pta_tutor_bot_cookie
 preauthorized:
   emails: []
-
