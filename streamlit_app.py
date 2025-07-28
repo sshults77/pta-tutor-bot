@@ -12,8 +12,6 @@ from pptx import Presentation
 import openai
 import json
 
-st.write("DEBUG: streamlit-authenticator version:", stauth.__version__)
-
 # --- Load users from YAML ---
 try:
     with open('users.yaml') as file:
