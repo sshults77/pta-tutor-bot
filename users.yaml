@@ -3,32 +3,32 @@ credentials:
     kbooth:
       email: kbooth@example.com
       name: kbooth
-      password: "$2b$12$Ejqqv3T47S/.c5rNkI/PUeS3wAkFobU1BlY.M8sIwhxWkg4sTKmAW"
+      password: "$2b$12$VuM.BuKqaHf/7zDxSrIKdOfzTEVIwjYG.MG79d9yB.0u.3s.bIxeC"
       role: student
     kboothadmin:
       email: kboothadmin@example.com
       name: kboothadmin
-      password: "$2b$12$GKHtUSfSZoEtfK5jh/7B1e88uTC0epwtkFChbQ9GMvN.HBpm9eZyO"
+      password: "$2b$12$VuM.BuKqaHf/7zDxSrIKdOfzTEVIwjYG.MG79d9yB.0u.3s.bIxeC"
       role: admin
     sshults:
       email: sshults@example.com
       name: sshults
-      password: "$2b$12$nlk8Wk4BKckXZXYRFOyRgeAZ6vTk4Jv/Fd5ti/GeKms63ChN5c44G"
+      password: "$2b$12$VuM.BuKqaHf/7zDxSrIKdOfzTEVIwjYG.MG79d9yB.0u.3s.bIxeC"
       role: student
     sshultsadmin:
       email: sshultsadmin@example.com
       name: sshultsadmin
-      password: "$2b$12$eZKkrtteYBM7zQpYqDCbKu3l8blZbwkSTd.7TSNPbgZvmG4Cj/FZG"
+      password: "$2b$12$VuM.BuKqaHf/7zDxSrIKdOfzTEVIwjYG.MG79d9yB.0u.3s.bIxeC"
       role: admin
     tallen:
       email: tallen@example.com
       name: tallen
-      password: "$2b$12$3Rx/8IL3zY3JPdkiTLB6cuPtR7FOzpBf9m44vI2hZedpyeSLXg6Im"
+      password: "$2b$12$VuM.BuKqaHf/7zDxSrIKdOfzTEVIwjYG.MG79d9yB.0u.3s.bIxeC"
       role: student
     tallenadmin:
       email: tallenadmin@example.com
       name: tallenadmin
-      password: "$2b$12$k.BJG5R92R2kNztA3nHIhOcN6w/cH5ioU69n4At4p0kAFeUSGz5by"
+      password: "$2b$12$VuM.BuKqaHf/7zDxSrIKdOfzTEVIwjYG.MG79d9yB.0u.3s.bIxeC"
       role: admin
 cookie:
   expiry_days: 3
